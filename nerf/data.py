@@ -38,7 +38,7 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
         img_path = os.path.join(dataset_path, rel_path + ".png")
         img = imageio.imread(img_path).astype(np.float32) / 255.0
         
-        # Composite image with alpha channel over white background if applicable.
+        # Composite image with alpha channel over white background if applicable
         if img.shape[-1] == 4:
             alpha = img[..., 3:4]
             img = img[..., :3] * alpha + (1.0 - alpha)
@@ -46,11 +46,11 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
         images.append(img)
         c2w_matrices.append(np.array(frame["transform_matrix"], dtype=np.float32))
     
-    images = np.stack(images, axis=0)            # Shape: (N, H, W, 3)
-    c2w_matrices = np.stack(c2w_matrices, axis=0)  # Shape: (N, 4, 4)
+    images = np.stack(images, axis=0)
+    c2w_matrices = np.stack(c2w_matrices, axis=0)
     _, H, W, _ = images.shape
 
-    # Compute the focal length using the pinhole camera model.
+    # Compute the focal length using the pinhole camera model
     focal_length = 0.5 * W / np.tan(0.5 * camera_angle_x)
     
     return images, c2w_matrices, focal_length
@@ -78,34 +78,29 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     """
     N, H, W, _ = images.shape
 
-    # Flatten pixel colors for each image.
     target_pixels = images.reshape(N, -1, 3)
 
-    # Generate a meshgrid of pixel coordinates (u, v).
     u = np.arange(W, dtype=np.float32)
     v = np.arange(H, dtype=np.float32)
     u_grid, v_grid = np.meshgrid(u, v, indexing='xy')
 
-    # Convert pixel coordinates to camera space.
+    # Convert pixel coordinates to camera space
     x_cam = u_grid - 0.5 * W
     y_cam = -(v_grid - 0.5 * H)
     z_cam = -np.full_like(x_cam, focal_length)
-    directions_cam = np.stack([x_cam, y_cam, z_cam], axis=-1)  # Shape: (H, W, 3)
+    directions_cam = np.stack([x_cam, y_cam, z_cam], axis=-1)
 
-    # Extract rotation and translation components.
-    R = c2w_matrices[:, :3, :3]  # Shape: (N, 3, 3)
-    t = c2w_matrices[:, :3, 3]   # Shape: (N, 3)
+    R = c2w_matrices[:, :3, :3]
+    t = c2w_matrices[:, :3, 3]
 
-    # Vectorized application of camera-space directions transformation.
-    rays_d = np.einsum('nij,hwj->nhwi', R, directions_cam)  # Shape: (N, H, W, 3)
+    # Vectorized application of camera-space directions transformation
+    rays_d = np.einsum('nij,hwj->nhwi', R, directions_cam)
     
-    # Normalize ray directions.
+    # Normalize ray directions
     rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
 
-    # Broadcast the camera origin to every pixel.
-    rays_o = np.broadcast_to(t[:, None, None, :], rays_d.shape)  # Shape: (N, H, W, 3)
+    rays_o = np.broadcast_to(t[:, None, None, :], rays_d.shape)
 
-    # Reshape rays for downstream processing.
     rays_o = rays_o.reshape(N, -1, 3)
     rays_d = rays_d.reshape(N, -1, 3)
 
