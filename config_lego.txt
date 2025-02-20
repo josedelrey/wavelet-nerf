@@ -1,1 +1,2 @@
 datadir = ./datasets/lego
+checkpoint_path = ./models/nerf_model_009000.pth

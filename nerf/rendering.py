@@ -76,7 +76,7 @@ def render_volume(
     num_bins=100,
     device='cpu',
     white_background=True,
-    chunk_size=int(1e6)
+    chunk_size=8192
 ):
     rays_o = rays_o.to(device)
     rays_d = normalize_directions(rays_d.to(device))
@@ -103,7 +103,7 @@ def render_volume(
         sample_positions_flat = normalize_positions(sample_positions_flat, near, far)
         
         # Intersect using either model
-        colors_flat, densities_flat = model.intersect(sample_positions_flat, expanded_dirs)
+        colors_flat, densities_flat = model.forward(sample_positions_flat, expanded_dirs)
 
         # Now do the usual alpha compositing logic...
         colors = colors_flat.reshape(rays_o_chunk.shape[0], num_bins, 3)
