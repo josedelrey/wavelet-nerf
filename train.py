@@ -13,8 +13,8 @@ from nerf.loss import mse_to_psnr
 
 def parse_config(config_path: str) -> dict:
     """
-    Parse a simple configuration file where each non-empty, non-comment line is of the format:
-        key = value
+    Parse a configuration file where each non-empty, non-comment line is of the format:
+        key = value  # optional inline comment
     Returns a dictionary mapping keys to values.
     """
     config = {}
@@ -22,9 +22,21 @@ def parse_config(config_path: str) -> dict:
         for line in f:
             line = line.strip()
             if not line or line.startswith('#'):
+                continue  # Skip empty lines and full-line comments
+
+            # Remove inline comments
+            line = line.split('#', 1)[0].strip()
+
+            # Skip lines that become empty after removing comments
+            if not line:
                 continue
-            key, value = line.split('=', maxsplit=1)
-            config[key.strip()] = value.strip()
+
+            if '=' in line:
+                key, value = line.split('=', maxsplit=1)
+                config[key.strip()] = value.strip()
+            else:
+                print(f"Warning: Invalid line in config file: {line}")
+
     return config
 
 
