@@ -7,6 +7,7 @@ from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
 from nerf.rendering import render_volume
 
+
 def parse_config(config_path: str) -> dict:
     """
     Parse a simple configuration file where each non-empty, non-comment line is of the format:
@@ -23,8 +24,9 @@ def parse_config(config_path: str) -> dict:
             config[key.strip()] = value.strip()
     return config
 
+
 def main():
-    # 1. Parse command-line arguments and load configuration.
+    # Load configuration
     parser = argparse.ArgumentParser(
         description="Evaluate NeRF: Render a test image using a saved checkpoint."
     )
@@ -33,7 +35,7 @@ def main():
     args = parser.parse_args()
     config = parse_config(args.config)
 
-    dataset_path = config['datadir']              # e.g., "./data/lego"
+    dataset_path = config.get('datadir', './datasets/lego')
     checkpoint_path = config.get('checkpoint_path', None)
     if checkpoint_path is None:
         raise ValueError("Please provide a checkpoint_path in the config file.")
@@ -41,27 +43,25 @@ def main():
     far = float(config.get('far', 6.0))
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # 2. Load the test dataset.
-    #    This assumes a "transforms_test.json" exists. Otherwise, you may use "val" mode.
+    # Load dataset
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='test')
     N, H, W, _ = images_np.shape
     print(f"Loaded {N} test images of resolution {H}x{W}.")
 
-    # 3. Select a test image (here, the first image) and compute its rays.
-    single_image = images_np[0:1]       # Shape: (1, H, W, 3)
-    single_c2w = c2w_matrices_np[0:1]     # Shape: (1, 4, 4)
+    # Select a test image (first image in the dataset) and compute rays
+    single_image = images_np[0:1]
+    single_c2w = c2w_matrices_np[0:1]
     rays_o_np, rays_d_np, _ = compute_rays(single_image, single_c2w, focal_length)
-    # Convert to torch tensors and remove the extra dimension.
-    rays_o = torch.from_numpy(rays_o_np).float().to(device).squeeze(0)   # (H*W, 3)
-    rays_d = torch.from_numpy(rays_d_np).float().to(device).squeeze(0)   # (H*W, 3)
+    rays_o = torch.from_numpy(rays_o_np).float().to(device).squeeze(0)
+    rays_d = torch.from_numpy(rays_d_np).float().to(device).squeeze(0)
 
-    # 4. Load the saved model checkpoint.
+    # Load the saved checkpoint
     model = NeRFModel().to(device)
     checkpoint = torch.load(checkpoint_path, map_location=device)
     model.load_state_dict(checkpoint)
     model.eval()
 
-    # 5. Render the test image using render_volume.
+    # Render the test image
     with torch.no_grad():
         pred_rgb = render_volume(
             model,
@@ -72,17 +72,18 @@ def main():
             num_bins=100,
             device=device,
             white_background=True
-        )  # Expected shape: (H*W, 3)
+        )
 
-    # Reshape the predicted rays into an image.
+    # Reshape the predicted rays into an image
     rendered_image = pred_rgb.cpu().numpy().reshape(H, W, 3)
 
-    # 6. Plot the rendered image.
+    # Plot the rendered image
     plt.figure(figsize=(8, 8))
     plt.imshow(rendered_image)
     plt.axis('off')
     plt.title('Rendered Test Image')
     plt.show()
+
 
 if __name__ == '__main__':
     main()
