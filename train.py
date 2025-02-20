@@ -9,6 +9,7 @@ from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
 from nerf.rendering import render_volume
 from nerf.loss import mse_to_psnr
+import datetime  # Added for timestamping log messages
 
 
 def parse_config(config_path: str) -> dict:
@@ -119,23 +120,26 @@ def main():
         optimizer.step()
         scheduler.step()
 
-        # Log progress
+        # Log progress with timestamp
         if step % 100 == 0:
             current_lr = scheduler.get_last_lr()[0]
-            print(f"[Iter {step:06d}] LR: {current_lr:.6f} "
+            current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{current_time}] [Iter {step:06d}] LR: {current_lr:.6f} "
                   f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
 
-        # Save model checkpoint
+        # Save model checkpoint with timestamp
         if step % save_interval == 0 and step > 0:
             model_filename = os.path.join(save_path, f"nerf_model_{step:06d}.pth")
             torch.save(model.state_dict(), model_filename)
-            print(f"Model saved to {model_filename} at iteration {step}")
+            current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"[{current_time}] Model saved to {model_filename} at iteration {step}")
 
-    # Save final model
+    # Save final model with timestamp
     final_model_path = os.path.join(save_path, "nerf_model_final.pth")
     torch.save(model.state_dict(), final_model_path)
-    print("Training complete!")
-    print(f"Final model saved to {final_model_path}")
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{current_time}] Training complete!")
+    print(f"[{current_time}] Final model saved to {final_model_path}")
 
 
 if __name__ == '__main__':
