@@ -3,16 +3,10 @@ import torch.nn as nn
 from typing import Tuple
 from nerf.encoding import positional_encoding
 
-
 class NeRFModel(nn.Module):
     def __init__(self, pos_encoding_dim: int = 10, dir_encoding_dim: int = 4, hidden_dim: int = 256) -> None:
         """
         Initializes the NeRF model with two MLP blocks and an RGB head.
-
-        Args:
-            pos_encoding_dim (int): Positional encoding length for 3D points.
-            dir_encoding_dim (int): Positional encoding length for ray directions.
-            hidden_dim (int): Number of hidden units in the hidden layers.
         """
         super(NeRFModel, self).__init__()
 
@@ -51,24 +45,24 @@ class NeRFModel(nn.Module):
         self.pos_encoding_dim = pos_encoding_dim
         self.dir_encoding_dim = dir_encoding_dim
 
+        # Apply Xavier initialization to all Linear layers
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.xavier_uniform_(m.weight)
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass: applies positional encoding and processes through MLPs
         to obtain color and density predictions.
-
-        Args:
-            points (torch.Tensor): Input 3D points (shape: [N, 3]).
-            rays_d (torch.Tensor): Input ray directions (shape: [N, 3]).
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor]: Predicted colors (RGB, shape: [N, 3])
-            and density (shape: [N, 1]).
         """
         points_enc = positional_encoding(points, self.pos_encoding_dim)
         rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
 
         features = self.block1(points_enc)
-        
         features = self.block2(torch.cat((features, points_enc), dim=1))
         density = torch.relu(features[:, -1])
         features = features[:, :-1]
