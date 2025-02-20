@@ -59,8 +59,14 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
 
-    # Create an exponential LR scheduler
-    gamma = float(config.get('lr_gamma', 0.9))  # fallback gamma=0.999
+    # Create an exponential LR scheduler that decays the learning rate following:
+    # new_lr = initial_lr * (lr_decay_factor)^(iteration / (lr_decay * 1000))
+    # To achieve this with ExponentialLR (which multiplies the lr by gamma every step),
+    # we set:
+    #   gamma = (lr_decay_factor)^(1 / (lr_decay * 1000))
+    lr_decay = float(config.get('lr_decay', 250))            # number of 1000 steps
+    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))  # decay factor after lr_decay*1000 steps
+    gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
     scheduler = ExponentialLR(optimizer, gamma=gamma)
 
     # 4. Training loop.
@@ -69,7 +75,6 @@ def main():
         img_idx = np.random.randint(0, N)
 
         # (B) Compute rays for the selected image.
-        #     We use slicing [img_idx:img_idx+1] so the output has an extra dimension (1, H, W, 3).
         with torch.no_grad():
             single_image = images_np[img_idx:img_idx+1]       # Shape: (1, H, W, 3)
             single_c2w = c2w_matrices_np[img_idx:img_idx+1]     # Shape: (1, 4, 4)
@@ -82,7 +87,7 @@ def main():
         target_pixels = torch.from_numpy(target_pixels_np).float().to(device).squeeze(0)  # (H*W, 3)
 
         # (C) Randomly sample a subset of rays for this iteration.
-        num_pixels = rays_o.shape[0]  # equals H*W for the chosen image
+        num_pixels = rays_o.shape[0]
         sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
         rays_o_batch = rays_o[sel_inds]       # (num_random_rays, 3)
         rays_d_batch = rays_d[sel_inds]       # (num_random_rays, 3)
@@ -106,14 +111,14 @@ def main():
         loss.backward()
         optimizer.step()
 
+        # Update the learning rate scheduler every iteration.
+        scheduler.step()
+
         # (F) Log progress.
         if step % 100 == 0:
             current_lr = scheduler.get_last_lr()[0]
             print(f"[Iter {step:06d}] LR: {current_lr:.6f} "
                   f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
-            
-            if step % 1000 == 0:
-                scheduler.step()
 
         # (G) Save the model at specified intervals.
         if step % save_interval == 0 and step > 0:
