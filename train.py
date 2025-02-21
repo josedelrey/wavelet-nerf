@@ -54,6 +54,7 @@ def main():
 
     dataset_path = config.get('datadir', './datasets/lego')
     num_random_rays = int(config.get('num_random_rays', 4096))
+    render_batch_size = int(config.get('render_batch_size', 1024))
     num_iters = int(config.get('num_iters', 150000))
     learning_rate = float(config.get('learning_rate', 5e-4))
     near = float(config.get('near', 2.0))
@@ -111,7 +112,8 @@ def main():
             far,
             num_bins=100,
             device=device,
-            white_background=True
+            white_background=True,
+            chunk_size=render_batch_size
         )
 
         # Compute loss and update the model

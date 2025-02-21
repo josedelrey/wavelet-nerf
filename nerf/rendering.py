@@ -74,7 +74,7 @@ def render_volume(
     num_bins=100,
     device='cpu',
     white_background=True,
-    chunk_size=1024 * 8
+    chunk_size=8192  # 1024 * 8
 ):
     """
     Render rays via volumetric rendering using a NeRF model.
