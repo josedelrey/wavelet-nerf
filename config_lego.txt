@@ -7,7 +7,7 @@ datadir = ./datasets/lego
 num_random_rays = 4096
 
 # Number of rays processed in a single rendering batch
-render_batch_size = 8192
+render_batch_size = 16384
 
 # Total number of training iterations
 num_iters = 150000

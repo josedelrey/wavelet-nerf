@@ -1,0 +1,10 @@
+$files = @("./train.py", "nerf/data.py", "nerf/encoding.py", "nerf/loss.py", "nerf/models.py", "nerf/rendering.py")
+
+$output = "output_file.txt"
+Remove-Item $output -ErrorAction SilentlyContinue
+
+foreach ($file in $files) {
+    $comment = "# $file`n"
+    Add-Content -Path $output -Value $comment
+    Get-Content -Path $file | Add-Content -Path $output
+}

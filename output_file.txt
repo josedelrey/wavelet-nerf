@@ -1,0 +1,513 @@
+# ./train.py
+
+import os
+import argparse
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.optim.lr_scheduler import ExponentialLR
+from nerf.data import load_dataset, compute_rays
+from nerf.models import NeRFModel
+from nerf.rendering import render_volume
+from nerf.loss import mse_to_psnr
+import datetime
+from tqdm import tqdm  # Import tqdm for progress bar
+
+
+def parse_config(config_path: str) -> dict:
+    """
+    Parse a configuration file where each non-empty, non-comment line is of the format:
+        key = value  # optional inline comment
+    Returns a dictionary mapping keys to values.
+    """
+    config = {}
+    with open(config_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            # Remove inline comments
+            line = line.split('#', 1)[0].strip()
+
+            # Skip lines that become empty after removing comments
+            if not line:
+                continue
+
+            if '=' in line:
+                key, value = line.split('=', maxsplit=1)
+                config[key.strip()] = value.strip()
+            else:
+                print(f"Warning: Invalid line in config file: {line}")
+
+    return config
+
+
+def main():
+    # Load configuration
+    parser = argparse.ArgumentParser(
+        description="Train NeRF on a given dataset using volumetric rendering."
+    )
+    parser.add_argument('--config', type=str, required=True,
+                        help='Path to configuration file (e.g. config_lego.txt)')
+    args = parser.parse_args()
+    config = parse_config(args.config)
+
+    dataset_path = config.get('datadir', './datasets/lego')
+    num_random_rays = int(config.get('num_random_rays', 4096))
+    render_batch_size = int(config.get('render_batch_size', 1024))
+    num_iters = int(config.get('num_iters', 150000))
+    learning_rate = float(config.get('learning_rate', 5e-4))
+    near = float(config.get('near', 2.0))
+    far = float(config.get('far', 6.0))
+    save_path = config.get('save_path', './models')
+    save_interval = int(config.get('save_interval', 5000))
+    os.makedirs(save_path, exist_ok=True)
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Load the full training dataset
+    images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
+    rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
+    N = images_np.shape[0]
+
+    # Initialize NeRF model and optimizer
+    model = NeRFModel().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    mse_loss = nn.MSELoss()
+
+    # Learning rate scheduler with exponential decay
+    lr_decay = float(config.get('lr_decay', 150))
+    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
+    gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
+    scheduler = ExponentialLR(optimizer, gamma=gamma)
+
+    # Training loop with tqdm progress bar
+    for step in tqdm(range(num_iters), desc="Training", unit="it"):
+        # Randomly select an image from the dataset
+        img_idx = np.random.randint(0, N)
+
+        # Get the rays and target pixels for the selected image
+        rays_o_image_np = rays_o[img_idx]
+        rays_d_image_np = rays_d[img_idx]
+        target_pixels_image_np = target_pixels[img_idx]
+        rays_o_image = torch.from_numpy(rays_o_image_np).float().to(device).squeeze(0)
+        rays_d_image = torch.from_numpy(rays_d_image_np).float().to(device).squeeze(0)
+        target_pixels_image = torch.from_numpy(target_pixels_image_np).float().to(device).squeeze(0)
+
+        # Randomly sample a subset of rays for this iteration
+        num_pixels = rays_o_image.shape[0]
+        sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
+        rays_o_batch = rays_o_image[sel_inds]
+        rays_d_batch = rays_d_image[sel_inds]
+        target_rgb = target_pixels_image[sel_inds]
+
+        # Use render_volume to compute the predicted color along each ray
+        pred_rgb = render_volume(
+            model,
+            rays_o_batch,
+            rays_d_batch,
+            near,
+            far,
+            num_bins=100,
+            device=device,
+            white_background=True,
+            chunk_size=render_batch_size
+        )
+
+        # Compute loss and update the model
+        optimizer.zero_grad()
+        loss = mse_loss(pred_rgb, target_rgb)
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+
+        # Log progress every 100 iterations using tqdm.write to avoid clashing with the progress bar
+        if step % 100 == 0:
+            current_lr = scheduler.get_last_lr()[0]
+            current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            log_message = (f"[{current_time}] [Iter {step:07d}] LR: {current_lr:.6f} "
+                           f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
+            tqdm.write(log_message)
+
+        # Save model checkpoint
+        if step % save_interval == 0 and step > 0:
+            model_filename = os.path.join(save_path, f"nerf_model_{step:07d}.pth")
+            torch.save(model.state_dict(), model_filename)
+            current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            tqdm.write(f"[{current_time}] Model saved to {model_filename} at iteration {step}")
+
+    # Save final model
+    final_model_path = os.path.join(save_path, "nerf_model_final.pth")
+    torch.save(model.state_dict(), final_model_path)
+    current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    tqdm.write(f"[{current_time}] Training complete!")
+    tqdm.write(f"[{current_time}] Final model saved to {final_model_path}")
+
+
+if __name__ == '__main__':
+    main()
+# nerf/data.py
+
+import os
+import json
+import numpy as np
+import imageio.v2 as imageio
+from typing import Tuple
+
+
+def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, float]:
+    """
+    Load images and camera-to-world transformation matrices from the dataset.
+
+    This function reads a JSON file containing camera parameters and frame information,
+    loads each corresponding image, and composites images with an alpha channel over a 
+    white background. It also computes the camera's focal length based on the horizontal
+    field of view.
+
+    Args:
+        dataset_path (str): Base directory of the dataset.
+        mode (str): Dataset split mode ('train', 'val', or 'test'). Defaults to 'train'.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, float]:
+            - images: Array of shape (N, H, W, 3) with normalized RGB images.
+            - c2w_matrices: Array of shape (N, 4, 4) with camera-to-world transformation matrices.
+            - focal_length: Focal length computed from the camera's field of view.
+    """
+    transforms_path = os.path.join(dataset_path, f"transforms_{mode}.json")
+    with open(transforms_path, 'r') as f:
+        meta = json.load(f)
+
+    camera_angle_x = meta["camera_angle_x"]
+    frames = meta["frames"]
+
+    images = []
+    c2w_matrices = []
+    for frame in frames:
+        rel_path = frame["file_path"].lstrip("./")
+        img_path = os.path.join(dataset_path, rel_path + ".png")
+        img = imageio.imread(img_path).astype(np.float32) / 255.0
+        
+        # Composite image with alpha channel over white background if applicable
+        if img.shape[-1] == 4:
+            alpha = img[..., 3:4]
+            img = img[..., :3] * alpha + (1.0 - alpha)
+        
+        images.append(img)
+        c2w_matrices.append(np.array(frame["transform_matrix"], dtype=np.float32))
+    
+    images = np.stack(images, axis=0)
+    c2w_matrices = np.stack(c2w_matrices, axis=0)
+    _, H, W, _ = images.shape
+
+    # Compute the focal length using the pinhole camera model
+    focal_length = 0.5 * W / np.tan(0.5 * camera_angle_x)
+    
+    return images, c2w_matrices, focal_length
+
+
+def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Compute camera ray origins and directions, and extract target pixel colors.
+
+    This function generates a meshgrid of pixel coordinates, converts them to camera space,
+    and applies the rotation and translation from the camera-to-world matrices to obtain
+    ray origins and normalized ray directions. It also flattens the target pixel colors for 
+    further processing.
+
+    Args:
+        images (np.ndarray): Array of shape (N, H, W, 3) with RGB images.
+        c2w_matrices (np.ndarray): Array of shape (N, 4, 4) with camera-to-world matrices.
+        focal_length (float): Focal length derived from the camera intrinsics.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray, np.ndarray]:
+            - rays_o: Ray origins with shape (N, H*W, 3).
+            - rays_d: Normalized ray directions with shape (N, H*W, 3).
+            - target_pixels: Flattened RGB pixel colors with shape (N, H*W, 3).
+    """
+    N, H, W, _ = images.shape
+
+    target_pixels = images.reshape(N, -1, 3)
+
+    u = np.arange(W, dtype=np.float32)
+    v = np.arange(H, dtype=np.float32)
+    u_grid, v_grid = np.meshgrid(u, v, indexing='xy')
+
+    # Convert pixel coordinates to camera space
+    x_cam = u_grid - 0.5 * W
+    y_cam = -(v_grid - 0.5 * H)
+    z_cam = -np.full_like(x_cam, focal_length)
+    directions_cam = np.stack([x_cam, y_cam, z_cam], axis=-1)
+
+    R = c2w_matrices[:, :3, :3]
+    t = c2w_matrices[:, :3, 3]
+
+    # Vectorized application of camera-space directions transformation
+    rays_d = np.einsum('nij,hwj->nhwi', R, directions_cam)
+    
+    # Normalize ray directions
+    rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
+
+    rays_o = np.broadcast_to(t[:, None, None, :], rays_d.shape)
+
+    rays_o = rays_o.reshape(N, -1, 3)
+    rays_d = rays_d.reshape(N, -1, 3)
+
+    return rays_o, rays_d, target_pixels
+# nerf/encoding.py
+
+import torch
+
+
+def positional_encoding(x: torch.Tensor, L: int) -> torch.Tensor:
+    """
+    Applies positional encoding to the input tensor.
+
+    Args:
+        x (torch.Tensor): Input tensor.
+        L (int): Number of encoding functions (frequencies).
+
+    Returns:
+        torch.Tensor: Concatenated tensor with positional encodings.
+    """
+    out = [x]
+    for j in range(L):
+        out.append(torch.sin(2 ** j * x))
+        out.append(torch.cos(2 ** j * x))
+    return torch.cat(out, dim=1)
+# nerf/loss.py
+
+import numpy as np
+
+
+def mse_to_psnr(mse: float) -> float:
+    """
+    Converts Mean Squared Error to Peak Signal-to-Noise Ratio.
+
+    Args:
+        mse (float): Mean Squared Error.
+
+    Returns:
+        float: PSNR value.
+    """
+    return 20 * np.log10(1 / np.sqrt(mse))
+# nerf/models.py
+
+import torch
+import torch.nn as nn
+from typing import Tuple
+from nerf.encoding import positional_encoding
+
+
+class NeRFModel(nn.Module):
+    def __init__(self, pos_encoding_dim: int = 10, dir_encoding_dim: int = 4, hidden_dim: int = 256) -> None:
+        """
+        Initializes the NeRF model with two MLP blocks and an RGB head.
+
+        Args:
+            pos_encoding_dim (int): Positional encoding length for 3D points.
+            dir_encoding_dim (int): Positional encoding length for ray directions.
+            hidden_dim (int): Number of hidden units in the hidden layers.
+        """
+        super(NeRFModel, self).__init__()
+
+        self.block1 = nn.Sequential(
+            nn.Linear(pos_encoding_dim * 6 + 3, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
+
+        self.block2 = nn.Sequential(
+            nn.Linear(hidden_dim + pos_encoding_dim * 6 + 3, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim + 1)
+        )
+
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 3),
+            nn.Sigmoid()
+        )
+
+        self.pos_encoding_dim = pos_encoding_dim
+        self.dir_encoding_dim = dir_encoding_dim
+
+    def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass: applies positional encoding and processes through MLPs
+        to obtain color and density predictions.
+
+        Args:
+            points (torch.Tensor): Input 3D points (shape: [N, 3]).
+            rays_d (torch.Tensor): Input ray directions (shape: [N, 3]).
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Predicted colors (RGB, shape: [N, 3])
+            and density (shape: [N, 1]).
+        """
+        points_enc = positional_encoding(points, self.pos_encoding_dim)
+        rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+
+        features = self.block1(points_enc)
+        
+        features = self.block2(torch.cat((features, points_enc), dim=1))
+        density = torch.relu(features[:, -1])
+        features = features[:, :-1]
+
+        colors = self.rgb_head(torch.cat((features, rays_d_enc), dim=1))
+        return colors, density
+# nerf/rendering.py
+
+import torch
+from torch import Tensor
+
+
+def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
+    """
+    Computes cumulative transmittance along rays.
+
+    Args:
+        betas (Tensor): Complement of alpha values (1 - alpha).
+
+    Returns:
+        Tensor: Accumulated transmittance.
+    """
+    accum_trans = torch.cumprod(betas, dim=1)
+    init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)
+    return torch.cat((init, accum_trans[:, :-1]), dim=1)
+
+
+def stratified_sampling(near: float, far: float, num_bins: int, device: str = 'cpu') -> Tensor:
+    """
+    Performs stratified sampling in the range [near, far].
+
+    Args:
+        near (float): Near bound.
+        far (float): Far bound.
+        num_bins (int): Number of samples per ray.
+        device (str): Computation device.
+
+    Returns:
+        Tensor: Sampled positions.
+    """
+    bins = torch.linspace(near, far, num_bins + 1, device=device)
+    lower = bins[:-1]
+    upper = bins[1:]
+    random_offsets = torch.rand(num_bins, device=device)
+    return lower + (upper - lower) * random_offsets
+
+
+def normalize_directions(directions: Tensor) -> Tensor:
+    """
+    Normalizes ray directions to unit vectors.
+
+    Args:
+        directions (Tensor): Ray directions.
+
+    Returns:
+        Tensor: Normalized ray directions.
+    """
+    return directions / torch.norm(directions, dim=-1, keepdim=True)
+
+
+def normalize_positions(positions: Tensor, near: float, far: float) -> Tensor:
+    """
+    Normalizes positions to the range [-1, 1].
+
+    Args:
+        positions (Tensor): Sampled positions.
+        near (float): Near bound.
+        far (float): Far bound.
+
+    Returns:
+        Tensor: Normalized positions.
+    """
+    return 2 * (positions - near) / (far - near) - 1
+
+
+def render_volume(
+    model,
+    rays_o,
+    rays_d,
+    near,
+    far,
+    num_bins=100,
+    device='cpu',
+    white_background=True,
+    chunk_size=8192  # 1024 * 8
+):
+    """
+    Render rays via volumetric rendering using a NeRF model.
+
+    This function performs stratified sampling, queries the model for
+    color and density predictions, and applies alpha compositing to
+    produce final RGB values.
+
+    Args:
+        model: Neural network predicting colors and densities.
+        rays_o (Tensor): Ray origins (N, 3).
+        rays_d (Tensor): Ray directions (N, 3).
+        near (float): Near bound for sampling.
+        far (float): Far bound for sampling.
+        num_bins (int, optional): Number of samples per ray. Default is 100.
+        device (str, optional): Computation device. Default is 'cpu'.
+        white_background (bool, optional): Use white background for compositing.
+        chunk_size (int, optional): Number of rays processed per chunk.
+
+    Returns:
+        Tensor: Rendered RGB colors for each ray (N, 3).
+    """
+    rays_o = rays_o.to(device)
+    rays_d = normalize_directions(rays_d.to(device))
+    
+    rendered_rgb = []
+    for i in range(0, rays_o.shape[0], chunk_size):
+        rays_o_chunk = rays_o[i:i + chunk_size]
+        rays_d_chunk = rays_d[i:i + chunk_size]
+
+        stratified_samples = stratified_sampling(near, far, num_bins, device)
+        deltas = stratified_samples[1:] - stratified_samples[:-1]
+        delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)
+        deltas = torch.cat([deltas, delta_inf], dim=0)
+
+        sample_positions = rays_o_chunk.unsqueeze(1) + stratified_samples.unsqueeze(0).unsqueeze(-1) * rays_d_chunk.unsqueeze(1)
+        sample_positions_flat = sample_positions.reshape(-1, 3)
+        expanded_dirs = rays_d_chunk.unsqueeze(1).expand(-1, num_bins, -1).reshape(-1, 3)
+
+        # Normalize positions to the model's expected input range
+        sample_positions_flat = normalize_positions(sample_positions_flat, near, far)
+        
+        colors_flat, densities_flat = model.forward(sample_positions_flat, expanded_dirs)
+        colors = colors_flat.reshape(rays_o_chunk.shape[0], num_bins, 3)
+        densities = densities_flat.reshape(rays_o_chunk.shape[0], num_bins)
+
+        alpha = 1 - torch.exp(-densities * deltas.unsqueeze(0))
+        weights = compute_accumulated_transmittance(1 - alpha) * alpha
+
+        # Perform alpha compositing
+        if white_background:
+            comp_rgb = (weights.unsqueeze(-1) * colors).sum(dim=1)
+            comp_rgb = comp_rgb + (1 - weights.sum(dim=1, keepdim=True))
+        else:
+            comp_rgb = (weights.unsqueeze(-1) * colors).sum(dim=1)
+
+        rendered_rgb.append(comp_rgb)
+
+    return torch.cat(rendered_rgb, dim=0)

@@ -105,24 +105,3 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     rays_d = rays_d.reshape(N, -1, 3)
 
     return rays_o, rays_d, target_pixels
-
-
-def get_rays(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Generate camera rays and corresponding pixel colors from the dataset.
-
-    This high-level function loads the dataset (images and camera-to-world matrices) and then
-    computes the ray origins and directions in a fully vectorized manner.
-
-    Args:
-        dataset_path (str): Path to the dataset directory.
-        mode (str): Dataset split mode ('train', 'val', or 'test'). Defaults to 'train'.
-
-    Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]:
-            - rays_o: Ray origins, shape (N, H*W, 3).
-            - rays_d: Normalized ray directions, shape (N, H*W, 3).
-            - target_pixels: Flattened RGB pixel colors, shape (N, H*W, 3).
-    """
-    images, c2w_matrices, focal_length = load_dataset(dataset_path, mode)
-    return compute_rays(images, c2w_matrices, focal_length)

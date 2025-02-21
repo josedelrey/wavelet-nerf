@@ -67,6 +67,7 @@ def main():
 
     # Load the full training dataset
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
+    rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
     N = images_np.shape[0]
 
     # Initialize NeRF model and optimizer
@@ -85,23 +86,20 @@ def main():
         # Randomly select an image from the dataset
         img_idx = np.random.randint(0, N)
 
-        # Compute rays for the selected image
-        with torch.no_grad():
-            single_image = images_np[img_idx:img_idx+1]
-            single_c2w = c2w_matrices_np[img_idx:img_idx+1]
-            rays_o_np, rays_d_np, target_pixels_np = compute_rays(
-                single_image, single_c2w, focal_length
-            )
-        rays_o = torch.from_numpy(rays_o_np).float().to(device).squeeze(0)
-        rays_d = torch.from_numpy(rays_d_np).float().to(device).squeeze(0)
-        target_pixels = torch.from_numpy(target_pixels_np).float().to(device).squeeze(0)
+        # Get the rays and target pixels for the selected image
+        rays_o_image_np = rays_o[img_idx]
+        rays_d_image_np = rays_d[img_idx]
+        target_pixels_image_np = target_pixels[img_idx]
+        rays_o_image = torch.from_numpy(rays_o_image_np).float().to(device).squeeze(0)
+        rays_d_image = torch.from_numpy(rays_d_image_np).float().to(device).squeeze(0)
+        target_pixels_image = torch.from_numpy(target_pixels_image_np).float().to(device).squeeze(0)
 
         # Randomly sample a subset of rays for this iteration
-        num_pixels = rays_o.shape[0]
+        num_pixels = rays_o_image.shape[0]
         sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
-        rays_o_batch = rays_o[sel_inds]
-        rays_d_batch = rays_d[sel_inds]
-        target_rgb = target_pixels[sel_inds]
+        rays_o_batch = rays_o_image[sel_inds]
+        rays_d_batch = rays_d_image[sel_inds]
+        target_rgb = target_pixels_image[sel_inds]
 
         # Use render_volume to compute the predicted color along each ray
         pred_rgb = render_volume(
@@ -124,7 +122,7 @@ def main():
         scheduler.step()
 
         # Log progress every 100 iterations using tqdm.write to avoid clashing with the progress bar
-        if step % 100 == 0:
+        if step % 10 == 0:
             current_lr = scheduler.get_last_lr()[0]
             current_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             log_message = (f"[{current_time}] [Iter {step:07d}] LR: {current_lr:.6f} "
