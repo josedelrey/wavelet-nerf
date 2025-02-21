@@ -53,8 +53,8 @@ def main():
     config = parse_config(args.config)
 
     dataset_path = config.get('datadir', './datasets/lego')
-    num_random_rays = int(config.get('num_random_rays', 1024))
-    num_iters = int(config.get('num_iters', 1000000))
+    num_random_rays = int(config.get('num_random_rays', 4096))
+    num_iters = int(config.get('num_iters', 150000))
     learning_rate = float(config.get('learning_rate', 5e-4))
     near = float(config.get('near', 2.0))
     far = float(config.get('far', 6.0))
@@ -74,7 +74,7 @@ def main():
     mse_loss = nn.MSELoss()
 
     # Learning rate scheduler with exponential decay
-    lr_decay = float(config.get('lr_decay', 250))
+    lr_decay = float(config.get('lr_decay', 150))
     lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
     scheduler = ExponentialLR(optimizer, gamma=gamma)
