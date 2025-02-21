@@ -42,6 +42,19 @@ def parse_config(config_path: str) -> dict:
     return config
 
 
+def format_elapsed_time(start_time: datetime.datetime) -> str:
+    """
+    Compute the elapsed time since start_time and format it as HH:MM:SS.
+    """
+    elapsed_time = datetime.datetime.now() - start_time
+    total_seconds = int(elapsed_time.total_seconds())
+    return '{:02d}:{:02d}:{:02d}'.format(
+        total_seconds // 3600,
+        (total_seconds % 3600) // 60,
+        total_seconds % 60
+    )
+
+
 def main():
     # Load configuration
     parser = argparse.ArgumentParser(
@@ -70,7 +83,6 @@ def main():
     rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
     N = images_np.shape[0]
 
-    # Initialize NeRF model and optimizer
     model = NeRFModel().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
@@ -81,7 +93,6 @@ def main():
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
     scheduler = ExponentialLR(optimizer, gamma=gamma)
 
-    # Initialize start time for elapsed time logging
     start_time = datetime.datetime.now()
 
     # Training loop with tqdm progress bar
@@ -127,8 +138,8 @@ def main():
         # Log progress every 10 iterations using elapsed time since training started
         if step % 10 == 0:
             current_lr = scheduler.get_last_lr()[0]
-            elapsed_time = datetime.datetime.now() - start_time
-            log_message = (f"[{elapsed_time}] [Iter {step:07d}] LR: {current_lr:.6f} "
+            elapsed_str = format_elapsed_time(start_time)
+            log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
                            f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
             tqdm.write(log_message)
 
@@ -136,15 +147,15 @@ def main():
         if step % save_interval == 0 and step > 0:
             model_filename = os.path.join(save_path, f"nerf_model_{step:07d}.pth")
             torch.save(model.state_dict(), model_filename)
-            elapsed_time = datetime.datetime.now() - start_time
-            tqdm.write(f"[{elapsed_time}] Model saved to {model_filename} at iteration {step}")
+            elapsed_str = format_elapsed_time(start_time)
+            tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
     # Save final model
     final_model_path = os.path.join(save_path, "nerf_model_final.pth")
     torch.save(model.state_dict(), final_model_path)
-    elapsed_time = datetime.datetime.now() - start_time
-    tqdm.write(f"[{elapsed_time}] Training complete!")
-    tqdm.write(f"[{elapsed_time}] Final model saved to {final_model_path}")
+    elapsed_str = format_elapsed_time(start_time)
+    tqdm.write(f"[{elapsed_str}] Training complete!")
+    tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
 
 
 if __name__ == '__main__':

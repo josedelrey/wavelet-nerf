@@ -99,7 +99,7 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     # Normalize ray directions
     rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
 
-    rays_o = np.broadcast_to(t[:, None, None, :], rays_d.shape)
+    rays_o = np.tile(t[:, None, None, :], (1, H, W, 1))
 
     rays_o = rays_o.reshape(N, -1, 3)
     rays_d = rays_d.reshape(N, -1, 3)
