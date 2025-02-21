@@ -5,7 +5,7 @@ import torch
 import matplotlib.pyplot as plt
 from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
-from nerf.rendering import render_volume
+from nerf.rendering import render_nerf
 
 def parse_config(config_path: str) -> dict:
     """
@@ -61,13 +61,13 @@ def main():
 
     # Render the test image
     with torch.no_grad():
-        pred_rgb = render_volume(
+        pred_rgb = render_nerf(
             model,
             rays_o,
             rays_d,
             near,
             far,
-            num_bins=100,
+            num_coarse=100,
             device=device,
             white_background=True
         )

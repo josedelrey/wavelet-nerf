@@ -7,7 +7,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ExponentialLR
 from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
-from nerf.rendering import render_volume
+from nerf.rendering import render_nerf
 from nerf.loss import mse_to_psnr
 import datetime
 from tqdm import tqdm
@@ -116,13 +116,13 @@ def main():
         target_rgb = target_pixels_image[sel_inds]
 
         # Use render_volume to compute the predicted color along each ray
-        pred_rgb = render_volume(
+        pred_rgb = render_nerf(
             model,
             rays_o_batch,
             rays_d_batch,
             near,
             far,
-            num_bins=100,
+            num_coarse=100,
             device=device,
             white_background=True,
             chunk_size=render_batch_size

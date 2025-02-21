@@ -1,19 +1,20 @@
 import torch
 from torch import Tensor
 
+
 def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
     """
     Computes cumulative transmittance along rays. 
 
     Args:
-        betas (Tensor): Complement of alpha values (1 - alpha).
-
+        betas (Tensor): Complement of alpha values (1 - alpha) with shape (B, N) 
+                        where B = batch size (number of rays) and N = number of samples per ray.
     Returns:
-        Tensor: Accumulated transmittance.
+        Tensor: Accumulated transmittance with shape (B, N)
     """
-    accum_trans = torch.cumprod(betas, dim=1)
-    init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)
-    return torch.cat((init, accum_trans[:, :-1]), dim=1)
+    accum_trans = torch.cumprod(betas, dim=1)  # shape: (B, N), cumulative product along samples
+    init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)  # shape: (B, 1)
+    return torch.cat((init, accum_trans[:, :-1]), dim=1)  # shape: (B, N)
 
 
 def stratified_sampling(near: float, far: float, num_bins: int, device: str = 'cpu') -> Tensor:
@@ -27,13 +28,13 @@ def stratified_sampling(near: float, far: float, num_bins: int, device: str = 'c
         device (str): Computation device.
 
     Returns:
-        Tensor: A tensor of stratified samples.
+        Tensor: A tensor of stratified samples with shape (num_bins,)
     """
-    bins = torch.linspace(near, far, num_bins + 1, device=device)
-    lower = bins[:-1]
-    upper = bins[1:]
-    random_offsets = torch.rand(num_bins, device=device)
-    return lower + (upper - lower) * random_offsets
+    bins = torch.linspace(near, far, num_bins + 1, device=device)  # shape: (num_bins+1,)
+    lower = bins[:-1]  # shape: (num_bins,)
+    upper = bins[1:]   # shape: (num_bins,)
+    random_offsets = torch.rand(num_bins, device=device)  # shape: (num_bins,)
+    return lower + (upper - lower) * random_offsets  # shape: (num_bins,)
 
 
 def normalize_directions(directions: Tensor) -> Tensor:
@@ -41,12 +42,12 @@ def normalize_directions(directions: Tensor) -> Tensor:
     Normalizes ray directions to unit vectors.
 
     Args:
-        directions (Tensor): Ray directions.
+        directions (Tensor): Ray directions with shape (..., 3).
 
     Returns:
-        Tensor: Normalized ray directions.
+        Tensor: Normalized ray directions with the same shape as input.
     """
-    return directions / torch.norm(directions, dim=-1, keepdim=True)
+    return directions / torch.norm(directions, dim=-1, keepdim=True)  # shape: same as directions
 
 
 def normalize_positions(positions: Tensor, near: float, far: float) -> Tensor:
@@ -54,19 +55,19 @@ def normalize_positions(positions: Tensor, near: float, far: float) -> Tensor:
     Normalizes positions to the range [-1, 1].
 
     Args:
-        positions (Tensor): Sampled positions.
+        positions (Tensor): Sampled positions with shape (..., 3).
         near (float): Near bound.
         far (float): Far bound.
 
     Returns:
-        Tensor: Normalized positions.
+        Tensor: Normalized positions with the same shape as input.
     """
-    return 2 * (positions - near) / (far - near) - 1
+    return 2 * (positions - near) / (far - near) - 1  # shape: same as positions
 
 
-def generate_sample_positions(
-    rays_o_batch: Tensor,
-    rays_d_batch: Tensor,
+def generate_coarse_positions(
+    rays_o_batch: Tensor,  # shape: (B, 3) where B = number of rays in the batch
+    rays_d_batch: Tensor,  # shape: (B, 3) (normalized ray directions)
     near: float,
     far: float,
     num_bins: int,
@@ -75,28 +76,22 @@ def generate_sample_positions(
     """
     Generates stratified sample positions for a batch of rays and computes corresponding deltas.
 
-    Args:
-        rays_o_batch (Tensor): Batch of ray origins (B, 3).
-        rays_d_batch (Tensor): Batch of normalized ray directions (B, 3).
-        near (float): Near bound.
-        far (float): Far bound.
-        num_bins (int): Number of samples per ray.
-        device (str): Computation device.
-
     Returns:
         Tuple[Tensor, Tensor]:
-            - sample_positions: Sample positions for each ray (B, num_bins, 3).
-            - deltas: Deltas between adjacent sample positions (num_bins+1,).
+            - sample_positions: Sample positions for each ray with shape (B, num_bins, 3).
+            - deltas: Deltas between adjacent sample positions with shape (num_bins,) 
+                      (the last delta is set to a large value to indicate infinity).
     """
     # Get stratified samples along one ray
-    stratified_samples = stratified_sampling(near, far, num_bins, device)
-    # Compute deltas from stratified samples
-    deltas = stratified_samples[1:] - stratified_samples[:-1]
-    delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)
-    deltas = torch.cat([deltas, delta_inf], dim=0)
-    # Compute sample positions for each ray in the batch
-    sample_positions = rays_o_batch.unsqueeze(1) + stratified_samples.unsqueeze(0).unsqueeze(-1) * rays_d_batch.unsqueeze(1)
-    return sample_positions, deltas
+    stratified_samples = stratified_sampling(near, far, num_bins, device)  # shape: (num_bins,)
+    # Compute deltas from stratified samples (difference between consecutive samples)
+    deltas = stratified_samples[1:] - stratified_samples[:-1]  # shape: (num_bins - 1,)
+    delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)  # shape: (1,)
+    deltas = torch.cat([deltas, delta_inf], dim=0)  # shape: (num_bins,)
+    # Compute sample positions for each ray in the batch:
+    # Expand rays_o_batch: (B, 1, 3) and stratified_samples: (1, num_bins, 1) so broadcasting works
+    sample_positions = rays_o_batch.unsqueeze(1) + stratified_samples.unsqueeze(0).unsqueeze(-1) * rays_d_batch.unsqueeze(1)  # shape: (B, num_bins, 3)
+    return sample_positions, deltas  # sample_positions: (B, num_bins, 3); deltas: (num_bins,)
 
 
 def query_model(model, sample_positions_flat: Tensor, directions_flat: Tensor, near: float, far: float):
@@ -104,18 +99,17 @@ def query_model(model, sample_positions_flat: Tensor, directions_flat: Tensor, n
     Normalizes sample positions and queries the model to obtain colors and densities.
 
     Args:
-        model: Neural network predicting colors and densities.
-        sample_positions_flat (Tensor): Flattened sample positions (N, 3).
-        directions_flat (Tensor): Flattened ray directions corresponding to the sample positions (N, 3).
-        near (float): Near bound.
-        far (float): Far bound.
+        sample_positions_flat (Tensor): Flattened sample positions with shape (N, 3) where N = B * num_bins.
+        directions_flat (Tensor): Flattened ray directions corresponding to the sample positions with shape (N, 3).
 
     Returns:
-        Tuple[Tensor, Tensor]: colors_flat (N, 3) and densities_flat (N,)
+        Tuple[Tensor, Tensor]: 
+            - colors_flat: Predicted colors with shape (N, 3)
+            - densities_flat: Predicted densities with shape (N,)
     """
     # Normalize positions to the model's expected input range
-    sample_positions_normalized = normalize_positions(sample_positions_flat, near, far)
-    return model.forward(sample_positions_normalized, directions_flat)
+    sample_positions_normalized = normalize_positions(sample_positions_flat, near, far)  # shape: (N, 3)
+    return model.forward(sample_positions_normalized, directions_flat)  # shapes: (N, 3) and (N,)
 
 
 def composite_volume(colors: Tensor, densities: Tensor, deltas: Tensor, white_background: bool) -> Tensor:
@@ -123,84 +117,80 @@ def composite_volume(colors: Tensor, densities: Tensor, deltas: Tensor, white_ba
     Performs volumetric rendering (alpha compositing) to compute final RGB colors for each ray.
 
     Args:
-        colors (Tensor): Colors predicted by the model (B, num_bins, 3).
-        densities (Tensor): Densities predicted by the model (B, num_bins).
-        deltas (Tensor): Deltas between adjacent sample positions (num_bins+1,).
+        colors (Tensor): Colors predicted by the model with shape (B, num_bins, 3).
+        densities (Tensor): Densities predicted by the model with shape (B, num_bins).
+        deltas (Tensor): Deltas between adjacent sample positions with shape (num_bins,) [or (num_bins+1,) if different sampling].
         white_background (bool): If True, composite with a white background.
 
     Returns:
-        Tensor: Composite RGB colors for each ray (B, 3).
+        Tensor: Composite RGB colors for each ray with shape (B, 3).
     """
-    # Compute alpha values
-    alpha = 1 - torch.exp(-densities * deltas.unsqueeze(0))
-    # Compute weights along the ray
-    weights = compute_accumulated_transmittance(1 - alpha) * alpha
-    # Composite the colors
-    comp_rgb = (weights.unsqueeze(-1) * colors).sum(dim=1)
+    # Compute alpha values using the volume rendering formula
+    # densities: (B, num_bins), deltas.unsqueeze(0): (1, num_bins)
+    alpha = 1 - torch.exp(-densities * deltas.unsqueeze(0))  # shape: (B, num_bins)
+    # Compute weights along the ray:
+    # 1 - alpha: (B, num_bins) -> compute_accumulated_transmittance returns (B, num_bins)
+    weights = compute_accumulated_transmittance(1 - alpha) * alpha  # shape: (B, num_bins)
+    # Composite the colors by summing weighted contributions along the ray
+    # weights.unsqueeze(-1): (B, num_bins, 1); colors: (B, num_bins, 3)
+    comp_rgb = (weights.unsqueeze(-1) * colors).sum(dim=1)  # shape: (B, 3)
     if white_background:
-        comp_rgb = comp_rgb + (1 - weights.sum(dim=1, keepdim=True))
-    return comp_rgb
+        # weights.sum(dim=1, keepdim=True): (B, 1); added to each channel of comp_rgb
+        comp_rgb = comp_rgb + (1 - weights.sum(dim=1, keepdim=True))  # shape: (B, 3)
+    return comp_rgb  # shape: (B, 3)
 
 
-def render_volume(
+def render_nerf(
     model,
-    rays_o,
-    rays_d,
+    rays_o,           # shape: (N, 3) where N = total number of rays
+    rays_d,           # shape: (N, 3)
     near,
     far,
-    num_bins=100,
+    num_coarse=64,
     device='cpu',
     white_background=True,
-    chunk_size=8192  # 1024 * 8
+    chunk_size=8192  # Process rays in chunks (e.g., 8192 rays per chunk)
 ):
     """
     Render rays via volumetric rendering using a NeRF model.
 
-    This function performs the following steps:
-      1. Normalizes ray directions.
-      2. Splits the rays into chunks.
-      3. For each chunk:
-         - Generates stratified sample positions and deltas.
-         - Flattens sample positions and expands ray directions.
-         - Queries the model to get colors and densities.
-         - Applies volumetric rendering (alpha compositing) to compute final RGB values.
-
-    Args:
-        model: Neural network predicting colors and densities.
-        rays_o (Tensor): Ray origins (N, 3).
-        rays_d (Tensor): Ray directions (N, 3).
-        near (float): Near bound for sampling.
-        far (float): Far bound for sampling.
-        num_bins (int, optional): Number of samples per ray. Default is 100.
-        device (str, optional): Computation device. Default is 'cpu'.
-        white_background (bool, optional): Use white background for compositing.
-        chunk_size (int, optional): Number of rays processed per chunk.
-
     Returns:
-        Tensor: Rendered RGB colors for each ray (N, 3).
+        Tensor: Rendered RGB colors for each ray with shape (N, 3).
     """
-    rays_o = rays_o.to(device)
-    rays_d = normalize_directions(rays_d.to(device))
+    rays_o = rays_o.to(device)  # shape: (N, 3)
+    rays_d = normalize_directions(rays_d.to(device))  # shape: (N, 3)
     
-    rendered_rgb = []
+    coarse_rgb = []  # list to hold rendered RGB values from each chunk, each element shape: (chunk_size, 3)
     for i in range(0, rays_o.shape[0], chunk_size):
         # Process rays in chunks
-        rays_o_chunk = rays_o[i:i + chunk_size]
-        rays_d_chunk = rays_d[i:i + chunk_size]
+        rays_o_chunk = rays_o[i:i + chunk_size]  # shape: (chunk_size, 3) (last chunk may be smaller)
+        rays_d_chunk = rays_d[i:i + chunk_size]  # shape: (chunk_size, 3)
 
-        # Generate stratified sample positions and compute deltas
-        sample_positions, deltas = generate_sample_positions(rays_o_chunk, rays_d_chunk, near, far, num_bins, device)
-        # Flatten sample positions and expand directions for the model query
-        sample_positions_flat = sample_positions.reshape(-1, 3)
-        expanded_dirs = rays_d_chunk.unsqueeze(1).expand(-1, num_bins, -1).reshape(-1, 3)
+        # Generate stratified sample positions and deltas for the chunk
+        coarse_sample_positions, coarse_deltas = generate_coarse_positions(
+            rays_o_chunk,   # shape: (chunk_size, 3)
+            rays_d_chunk,   # shape: (chunk_size, 3)
+            near, far, num_coarse, device
+        )
+        # coarse_sample_positions shape: (chunk_size, num_coarse, 3)
+        # coarse_deltas shape: (num_coarse,)
+        coarse_sample_positions_flat = coarse_sample_positions.reshape(-1, 3)  # shape: (chunk_size * num_coarse, 3)
+        coarse_expanded_dirs = rays_d_chunk.unsqueeze(1).expand(-1, num_coarse, -1).reshape(-1, 3)  # shape: (chunk_size * num_coarse, 3)
 
-        # Query the model (MLP call) to obtain colors and densities
-        colors_flat, densities_flat = query_model(model, sample_positions_flat, expanded_dirs, near, far)
-        colors = colors_flat.reshape(rays_o_chunk.shape[0], num_bins, 3)
-        densities = densities_flat.reshape(rays_o_chunk.shape[0], num_bins)
+        # Query the model to obtain predicted colors and densities
+        coarse_colors_flat, coarse_densities_flat = query_model(
+            model,
+            coarse_sample_positions_flat,  # shape: (chunk_size * num_coarse, 3)
+            coarse_expanded_dirs,          # shape: (chunk_size * num_coarse, 3)
+            near, far
+        )
+        # coarse_colors_flat shape: (chunk_size * num_coarse, 3)
+        # coarse_densities_flat shape: (chunk_size * num_coarse,)
+        coarse_colors = coarse_colors_flat.reshape(rays_o_chunk.shape[0], num_coarse, 3)  # shape: (chunk_size, num_coarse, 3)
+        coarse_densities = coarse_densities_flat.reshape(rays_o_chunk.shape[0], num_coarse)  # shape: (chunk_size, num_coarse)
 
-        # Perform volumetric rendering via alpha compositing
-        comp_rgb = composite_volume(colors, densities, deltas, white_background)
-        rendered_rgb.append(comp_rgb)
+        # Perform volumetric rendering via alpha compositing to obtain final RGB per ray
+        coarse_comp_rgb = composite_volume(coarse_colors, coarse_densities, coarse_deltas, white_background)  # shape: (chunk_size, 3)
+        coarse_rgb.append(coarse_comp_rgb)  # list element shape: (chunk_size, 3)
 
-    return torch.cat(rendered_rgb, dim=0)
+    return torch.cat(coarse_rgb, dim=0)  # Final shape: (N, 3)
