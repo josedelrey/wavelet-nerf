@@ -20,7 +20,7 @@ far = 6.0
 save_path = ./models
 
 # Path to checkpoint for evaluation
-checkpoint_path = ./models/nerf_model_038000.pth
+checkpoint_path = ./models/nerf_model_240000.pth
 
 # Interval (in iterations) for saving model checkpoints
 save_interval = 5000

@@ -7,7 +7,6 @@ from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
 from nerf.rendering import render_volume
 
-
 def parse_config(config_path: str) -> dict:
     """
     Parse a simple configuration file where each non-empty, non-comment line is of the format:
@@ -23,7 +22,6 @@ def parse_config(config_path: str) -> dict:
             key, value = line.split('=', maxsplit=1)
             config[key.strip()] = value.strip()
     return config
-
 
 def main():
     # Load configuration
@@ -77,13 +75,18 @@ def main():
     # Reshape the predicted rays into an image
     rendered_image = pred_rgb.cpu().numpy().reshape(H, W, 3)
 
+    # Compute PSNR between the rendered image and the ground truth test image
+    gt_image = single_image[0]
+    mse = np.mean((rendered_image - gt_image) ** 2)
+    psnr = -10.0 * np.log10(mse)
+    print("PSNR: {:.2f}".format(psnr))
+
     # Plot the rendered image
     plt.figure(figsize=(8, 8))
     plt.imshow(rendered_image)
     plt.axis('off')
     plt.title('Rendered Test Image')
     plt.show()
-
 
 if __name__ == '__main__':
     main()
