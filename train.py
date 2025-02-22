@@ -1,16 +1,18 @@
 import os
 import argparse
+import datetime
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from tqdm import tqdm
 from torch.optim.lr_scheduler import ExponentialLR
+from torch.utils.tensorboard import SummaryWriter
+
 from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
 from nerf.rendering import render_nerf
 from nerf.loss import mse_to_psnr
-import datetime
-from tqdm import tqdm
 
 
 def parse_config(config_path: str) -> dict:
@@ -95,6 +97,9 @@ def main():
 
     start_time = datetime.datetime.now()
 
+    writer = SummaryWriter(log_dir='./logs')
+    writer.add_text('config', str(config))
+
     # Training loop with tqdm progress bar
     for step in tqdm(range(num_iters), desc="Training", unit="it"):
         # Randomly select an image from the dataset
@@ -135,13 +140,17 @@ def main():
         optimizer.step()
         scheduler.step()
 
-        # Log progress every 10 iterations using elapsed time since training started
+        # Log loss and PSNR
         if step % 10 == 0:
             current_lr = scheduler.get_last_lr()[0]
             elapsed_str = format_elapsed_time(start_time)
             log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
                            f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
             tqdm.write(log_message)
+
+            # Log loss and PSNR to TensorBoard
+            writer.add_scalar('loss', loss.item(), step)
+            writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
 
         # Save model checkpoint
         if step % save_interval == 0 and step > 0:
