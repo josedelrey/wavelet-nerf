@@ -4,7 +4,7 @@
 datadir = ./datasets/lego
 
 # Number of random rays sampled per iteration
-num_random_rays = 4096
+num_random_rays = 1024
 
 # Number of rays processed in a single rendering batch
 render_batch_size = 16384
@@ -23,7 +23,7 @@ far = 6.0
 save_path = ./models
 
 # Path to checkpoint for evaluation
-checkpoint_path = ./models/nerf_model_240000.pth
+checkpoint_path = ./models/nerf_model_0060000.pth
 
 # Interval (in iterations) for saving model checkpoints
 save_interval = 5000
