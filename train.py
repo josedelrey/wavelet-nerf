@@ -76,6 +76,8 @@ def main():
     far = float(config.get('far', 6.0))
     save_path = config.get('save_path', './models')
     save_interval = int(config.get('save_interval', 5000))
+    lr_decay = float(config.get('lr_decay', 150))
+    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
     os.makedirs(save_path, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -90,8 +92,6 @@ def main():
     mse_loss = nn.MSELoss()
 
     # Learning rate scheduler with exponential decay
-    lr_decay = float(config.get('lr_decay', 150))
-    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
     scheduler = ExponentialLR(optimizer, gamma=gamma)
 
