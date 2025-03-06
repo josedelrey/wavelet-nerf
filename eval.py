@@ -67,7 +67,7 @@ def main():
             rays_d,
             near,
             far,
-            num_coarse=100,
+            num_samples=100,
             device=device,
             white_background=True
         )

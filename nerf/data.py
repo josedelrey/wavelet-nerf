@@ -48,9 +48,8 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
     
     images = np.stack(images, axis=0)
     c2w_matrices = np.stack(c2w_matrices, axis=0)
-    _, H, W, _ = images.shape
+    _, _, W, _ = images.shape
 
-    # Compute the focal length using the pinhole camera model
     focal_length = 0.5 * W / np.tan(0.5 * camera_angle_x)
     
     return images, c2w_matrices, focal_length
@@ -60,10 +59,10 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     """
     Compute camera ray origins and directions, and extract target pixel colors.
 
-    This function generates a meshgrid of pixel coordinates, converts them to camera space,
-    and applies the rotation and translation from the camera-to-world matrices to obtain
-    ray origins and normalized ray directions. It also flattens the target pixel colors for 
-    further processing.
+    This function generates a meshgrid of pixel coordinates, converts these coordinates 
+    into camera space, and applies the camera-to-world rotation and translation to compute 
+    ray origins and normalized ray directions for each pixel. It also flattens the target 
+    pixel colors for subsequent processing.
 
     Args:
         images (np.ndarray): Array of shape (N, H, W, 3) with RGB images.
@@ -99,6 +98,7 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     # Normalize ray directions
     rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
 
+    # Replicate camera origin for each ray
     rays_o = np.tile(t[:, None, None, :], (1, H, W, 1))
 
     rays_o = rays_o.reshape(N, -1, 3)

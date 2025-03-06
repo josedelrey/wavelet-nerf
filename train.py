@@ -127,7 +127,7 @@ def main():
             rays_d_batch,
             near,
             far,
-            num_coarse=128,
+            num_samples=256,
             device=device,
             white_background=True,
             chunk_size=render_batch_size
