@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.tensorboard import SummaryWriter
 
 from nerf.data import load_dataset, compute_rays
-from nerf.models import NeRFModel
+from nerf.models import NeRFModel, SirenNeRFModel
 from nerf.rendering import render_nerf
 from nerf.loss import mse_to_psnr
 
@@ -67,28 +67,61 @@ def main():
     args = parser.parse_args()
     config = parse_config(args.config)
 
-    dataset_path = config.get('datadir', './datasets/lego')
+    # Dataset parameters
+    dataset_path = config.get('dataset_path', './datasets/lego')
+
+    # Sampling Parameters
     num_random_rays = int(config.get('num_random_rays', 1024))
     chunk_size = int(config.get('chunk_size', 8192))
     num_samples = int(config.get('num_samples', 256))
+
+    # Training Parameters
     num_iters = int(config.get('num_iters', 150000))
     learning_rate = float(config.get('learning_rate', 5e-4))
     near = float(config.get('near', 2.0))
     far = float(config.get('far', 6.0))
+
+    # Model saving parameters
     save_path = config.get('save_path', './models')
     save_interval = int(config.get('save_interval', 5000))
-    lr_decay = float(config.get('lr_decay', 150))
-    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
     os.makedirs(save_path, exist_ok=True)
 
+    # Learning rate decay parameters
+    lr_decay = float(config.get('lr_decay', 150))
+    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
+
+    # Model type
+    model_type = config.get('model_type', 'NeRF')
+    
+    print("===== Training Configuration Summary =====")
+    print(f"Dataset path: {dataset_path}")
+    print(f"Number of random rays: {num_random_rays}")
+    print(f"Chunk size: {chunk_size}")
+    print(f"Number of samples: {num_samples}")
+    print(f"Number of iterations: {num_iters}")
+    print(f"Learning rate: {learning_rate}")
+    print(f"Near plane: {near}")
+    print(f"Far plane: {far}")
+    print(f"Save path: {save_path}")
+    print(f"Save interval: {save_interval}")
+    print(f"LR decay: {lr_decay}")
+    print(f"LR decay factor: {lr_decay_factor}")
+    print(f"Model type: {model_type}")
+    print("==========================================")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    if model_type == 'nerf':
+        model = NeRFModel().to(device)
+    elif model_type == 'siren':
+        model = SirenNeRFModel().to(device)
+    else:
+        raise ValueError(f"Invalid model type: {model_type}")
 
     # Load the full training dataset
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
     rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
     N = images_np.shape[0]
 
-    model = NeRFModel().to(device)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
 
@@ -98,6 +131,7 @@ def main():
 
     start_time = datetime.datetime.now()
 
+    os.makedirs('./logs', exist_ok=True)
     writer = SummaryWriter(log_dir='./logs')
     writer.add_text('config', str(config))
 
@@ -155,13 +189,13 @@ def main():
 
         # Save model checkpoint
         if step % save_interval == 0 and step > 0:
-            model_filename = os.path.join(save_path, f"nerf_model_{step:07d}.pth")
+            model_filename = os.path.join(save_path, f"{model_type}_model_{step:07d}.pth")
             torch.save(model.state_dict(), model_filename)
             elapsed_str = format_elapsed_time(start_time)
             tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
     # Save final model
-    final_model_path = os.path.join(save_path, "nerf_model_final.pth")
+    final_model_path = os.path.join(save_path, f"{model_type}_model_final.pth")
     torch.save(model.state_dict(), final_model_path)
     elapsed_str = format_elapsed_time(start_time)
     tqdm.write(f"[{elapsed_str}] Training complete!")

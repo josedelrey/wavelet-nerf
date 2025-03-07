@@ -5,7 +5,7 @@
 # --------------------
 # Dataset Parameters
 # --------------------
-datadir = ./datasets/lego          # Directory containing the dataset
+dataset_path = ./datasets/lego     # Directory containing the dataset
 
 # --------------------
 # Sampling Parameters
@@ -18,21 +18,26 @@ num_samples = 256                  # Number of samples along each ray
 # Training Parameters
 # --------------------
 num_iters = 150000                 # Total number of training iterations
-learning_rate = 5e-4               # Learning rate for the optimizer
+learning_rate = 1e-4               # Learning rate for the optimizer
 near = 2.0                         # Near bound for ray sampling
 far = 6.0                          # Far bound for ray sampling
 
 # --------------------
 # Model Saving Parameters
 # --------------------
-save_path = ./models               # Directory to save trained models
+save_path = ./models/siren               # Directory to save trained models
 save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
 # --------------------
-# Learning Rate Decay Settings
+# Learning Rate Decay Parameters
 # --------------------
 lr_decay = 150                     # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate after each decay interval
+
+# --------------------
+# Model Type
+# --------------------
+model_type = siren
 
 # =============================================================================
 # Evaluation Parameters

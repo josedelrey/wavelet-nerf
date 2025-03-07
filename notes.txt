@@ -2,8 +2,10 @@ Remaining NeRF implementations:
 - Hierarchical sampling
 - Details in the original NeRF implementation such as adding noise to the inputs
 
+Siren implementation:
+- Try using w0 = 30 for the first layer and w = 1 for the rest
+
 TODO:
-- Implement Siren model architecture
 - Implement KiloNeRF
 - Implement FastNeRF
 - Implement PlenOctrees
