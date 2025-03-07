@@ -7,6 +7,7 @@ from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
 from nerf.rendering import render_nerf
 
+
 def parse_config(config_path: str) -> dict:
     """
     Parse a simple configuration file where each non-empty, non-comment line is of the format:
@@ -22,6 +23,7 @@ def parse_config(config_path: str) -> dict:
             key, value = line.split('=', maxsplit=1)
             config[key.strip()] = value.strip()
     return config
+
 
 def main():
     # Load configuration
@@ -67,7 +69,7 @@ def main():
             rays_d,
             near,
             far,
-            num_samples=100,
+            num_samples=256,
             device=device,
             white_background=True
         )

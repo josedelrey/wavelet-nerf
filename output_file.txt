@@ -2,17 +2,19 @@
 
 import os
 import argparse
+import datetime
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from tqdm import tqdm
 from torch.optim.lr_scheduler import ExponentialLR
+from torch.utils.tensorboard import SummaryWriter
+
 from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRFModel
 from nerf.rendering import render_nerf
 from nerf.loss import mse_to_psnr
-import datetime
-from tqdm import tqdm
 
 
 def parse_config(config_path: str) -> dict:
@@ -76,6 +78,8 @@ def main():
     far = float(config.get('far', 6.0))
     save_path = config.get('save_path', './models')
     save_interval = int(config.get('save_interval', 5000))
+    lr_decay = float(config.get('lr_decay', 150))
+    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
     os.makedirs(save_path, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -90,12 +94,13 @@ def main():
     mse_loss = nn.MSELoss()
 
     # Learning rate scheduler with exponential decay
-    lr_decay = float(config.get('lr_decay', 150))
-    lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
     scheduler = ExponentialLR(optimizer, gamma=gamma)
 
     start_time = datetime.datetime.now()
+
+    writer = SummaryWriter(log_dir='./logs')
+    writer.add_text('config', str(config))
 
     # Training loop with tqdm progress bar
     for step in tqdm(range(num_iters), desc="Training", unit="it"):
@@ -124,7 +129,7 @@ def main():
             rays_d_batch,
             near,
             far,
-            num_coarse=100,
+            num_samples=256,
             device=device,
             white_background=True,
             chunk_size=render_batch_size
@@ -137,13 +142,17 @@ def main():
         optimizer.step()
         scheduler.step()
 
-        # Log progress every 10 iterations using elapsed time since training started
+        # Log loss and PSNR
         if step % 10 == 0:
             current_lr = scheduler.get_last_lr()[0]
             elapsed_str = format_elapsed_time(start_time)
             log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
                            f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
             tqdm.write(log_message)
+
+            # Log loss and PSNR to TensorBoard
+            writer.add_scalar('loss', loss.item(), step)
+            writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
 
         # Save model checkpoint
         if step % save_interval == 0 and step > 0:
@@ -159,6 +168,100 @@ def main():
     tqdm.write(f"[{elapsed_str}] Training complete!")
     tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
 
+
+if __name__ == '__main__':
+    main()
+# ./eval.py
+
+import os
+import argparse
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
+from nerf.data import load_dataset, compute_rays
+from nerf.models import NeRFModel
+from nerf.rendering import render_nerf
+
+def parse_config(config_path: str) -> dict:
+    """
+    Parse a simple configuration file where each non-empty, non-comment line is of the format:
+        key = value
+    Returns a dictionary mapping keys to values.
+    """
+    config = {}
+    with open(config_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            key, value = line.split('=', maxsplit=1)
+            config[key.strip()] = value.strip()
+    return config
+
+def main():
+    # Load configuration
+    parser = argparse.ArgumentParser(
+        description="Evaluate NeRF: Render a test image using a saved checkpoint."
+    )
+    parser.add_argument('--config', type=str, required=True,
+                        help='Path to configuration file (e.g. config_lego.txt)')
+    args = parser.parse_args()
+    config = parse_config(args.config)
+
+    dataset_path = config.get('datadir', './datasets/lego')
+    checkpoint_path = config.get('checkpoint_path', None)
+    if checkpoint_path is None:
+        raise ValueError("Please provide a checkpoint_path in the config file.")
+    near = float(config.get('near', 2.0))
+    far = float(config.get('far', 6.0))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Load dataset
+    images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='test')
+    N, H, W, _ = images_np.shape
+    print(f"Loaded {N} test images of resolution {H}x{W}.")
+
+    # Select a test image (first image in the dataset) and compute rays
+    single_image = images_np[0:1]
+    single_c2w = c2w_matrices_np[0:1]
+    rays_o_np, rays_d_np, _ = compute_rays(single_image, single_c2w, focal_length)
+    rays_o = torch.from_numpy(rays_o_np).float().to(device).squeeze(0)
+    rays_d = torch.from_numpy(rays_d_np).float().to(device).squeeze(0)
+
+    # Load the saved checkpoint
+    model = NeRFModel().to(device)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint)
+    model.eval()
+
+    # Render the test image
+    with torch.no_grad():
+        pred_rgb = render_nerf(
+            model,
+            rays_o,
+            rays_d,
+            near,
+            far,
+            num_samples=100,
+            device=device,
+            white_background=True
+        )
+
+    # Reshape the predicted rays into an image
+    rendered_image = pred_rgb.cpu().numpy().reshape(H, W, 3)
+
+    # Compute PSNR between the rendered image and the ground truth test image
+    gt_image = single_image[0]
+    mse = np.mean((rendered_image - gt_image) ** 2)
+    psnr = -10.0 * np.log10(mse)
+    print("PSNR: {:.2f}".format(psnr))
+
+    # Plot the rendered image
+    plt.figure(figsize=(8, 8))
+    plt.imshow(rendered_image)
+    plt.axis('off')
+    plt.title('Rendered Test Image')
+    plt.show()
 
 if __name__ == '__main__':
     main()
@@ -214,9 +317,8 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
     
     images = np.stack(images, axis=0)
     c2w_matrices = np.stack(c2w_matrices, axis=0)
-    _, H, W, _ = images.shape
+    _, _, W, _ = images.shape
 
-    # Compute the focal length using the pinhole camera model
     focal_length = 0.5 * W / np.tan(0.5 * camera_angle_x)
     
     return images, c2w_matrices, focal_length
@@ -226,10 +328,10 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     """
     Compute camera ray origins and directions, and extract target pixel colors.
 
-    This function generates a meshgrid of pixel coordinates, converts them to camera space,
-    and applies the rotation and translation from the camera-to-world matrices to obtain
-    ray origins and normalized ray directions. It also flattens the target pixel colors for 
-    further processing.
+    This function generates a meshgrid of pixel coordinates, converts these coordinates 
+    into camera space, and applies the camera-to-world rotation and translation to compute 
+    ray origins and normalized ray directions for each pixel. It also flattens the target 
+    pixel colors for subsequent processing.
 
     Args:
         images (np.ndarray): Array of shape (N, H, W, 3) with RGB images.
@@ -265,6 +367,7 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     # Normalize ray directions
     rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
 
+    # Replicate camera origin for each ray
     rays_o = np.tile(t[:, None, None, :], (1, H, W, 1))
 
     rays_o = rays_o.reshape(N, -1, 3)
@@ -391,34 +494,26 @@ class NeRFModel(nn.Module):
 
 import torch
 from torch import Tensor
+from typing import Tuple
 
-def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
+
+def stratified_sampling(
+    near: float,
+    far: float,
+    num_bins: int,
+    device: str = 'cpu'
+) -> Tensor:
     """
-    Computes cumulative transmittance along rays. 
+    Perform stratified sampling within a given depth range.
 
     Args:
-        betas (Tensor): Complement of alpha values (1 - alpha).
+        near (float): Near bound of the sampling range.
+        far (float): Far bound of the sampling range.
+        num_bins (int): Number of samples.
+        device (str): Device for computation.
 
     Returns:
-        Tensor: Accumulated transmittance.
-    """
-    accum_trans = torch.cumprod(betas, dim=1)
-    init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)
-    return torch.cat((init, accum_trans[:, :-1]), dim=1)
-
-
-def stratified_sampling(near: float, far: float, num_bins: int, device: str = 'cpu') -> Tensor:
-    """
-    Performs stratified sampling in the range [near, far].
-
-    Args:
-        near (float): Near bound.
-        far (float): Far bound.
-        num_bins (int): Number of samples per ray.
-        device (str): Computation device.
-
-    Returns:
-        Tensor: A tensor of stratified samples.
+        Tensor: Stratified samples within [near, far].
     """
     bins = torch.linspace(near, far, num_bins + 1, device=device)
     lower = bins[:-1]
@@ -427,22 +522,53 @@ def stratified_sampling(near: float, far: float, num_bins: int, device: str = 'c
     return lower + (upper - lower) * random_offsets
 
 
-def normalize_directions(directions: Tensor) -> Tensor:
+def generate_sample_positions(
+    rays_o_batch: Tensor,
+    rays_d_batch: Tensor,
+    near: float,
+    far: float,
+    num_samples: int,
+    device: str = 'cpu'
+) -> Tuple[Tensor, Tensor]:
     """
-    Normalizes ray directions to unit vectors.
+    Generate stratified sample positions for a batch of rays and compute sample intervals.
 
     Args:
-        directions (Tensor): Ray directions.
+        rays_o_batch (Tensor): Ray origins.
+        rays_d_batch (Tensor): Ray directions.
+        near (float): Near bound for sampling.
+        far (float): Far bound for sampling.
+        num_samples (int): Number of samples per ray.
+        device (str): Computation device.
 
     Returns:
-        Tensor: Normalized ray directions.
+        Tuple[Tensor, Tensor]:
+            - sample_positions (Tensor): Sample positions for each ray.
+            - deltas (Tensor): Intervals between sampled positions.
     """
-    return directions / torch.norm(directions, dim=-1, keepdim=True)
+    strat_samples = stratified_sampling(near, far, num_samples, device)
+    deltas = strat_samples[1:] - strat_samples[:-1]
+
+    # Append a large interval for the last sample
+    delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)
+    deltas = torch.cat([deltas, delta_inf], dim=0)
+
+    # Expand each ray to get sample positions
+    sample_positions = (
+        rays_o_batch.unsqueeze(1)
+        + strat_samples.unsqueeze(0).unsqueeze(-1) * rays_d_batch.unsqueeze(1)
+    )
+
+    return sample_positions, deltas
 
 
-def normalize_positions(positions: Tensor, near: float, far: float) -> Tensor:
+def normalize_positions(
+    positions: Tensor,
+    near: float,
+    far: float
+) -> Tensor:
     """
-    Normalizes positions to the range [-1, 1].
+    Normalize positions to the range [-1, 1].
 
     Args:
         positions (Tensor): Sampled positions.
@@ -455,142 +581,157 @@ def normalize_positions(positions: Tensor, near: float, far: float) -> Tensor:
     return 2 * (positions - near) / (far - near) - 1
 
 
-def generate_coarse_positions(
-    rays_o_batch: Tensor,
-    rays_d_batch: Tensor,
+def query_model(
+    model: torch.nn.Module,
+    sample_positions_flat: Tensor,
+    directions_flat: Tensor,
     near: float,
-    far: float,
-    num_bins: int,
-    device: str = 'cpu'
-):
+    far: float
+) -> Tuple[Tensor, Tensor]:
     """
-    Generates stratified sample positions for a batch of rays and computes corresponding deltas.
+    Normalize sample positions and query the model to obtain colors and densities.
 
     Args:
-        rays_o_batch (Tensor): Batch of ray origins (B, 3).
-        rays_d_batch (Tensor): Batch of normalized ray directions (B, 3).
-        near (float): Near bound.
-        far (float): Far bound.
-        num_bins (int): Number of samples per ray.
-        device (str): Computation device.
+        model (torch.nn.Module): NeRF model.
+        sample_positions_flat (Tensor): Flattened sample positions.
+        directions_flat (Tensor): Flattened ray directions.
+        near (float): Near bound for normalization.
+        far (float): Far bound for normalization.
 
     Returns:
-        Tuple[Tensor, Tensor]:
-            - sample_positions: Sample positions for each ray (B, num_bins, 3).
-            - deltas: Deltas between adjacent sample positions (num_bins+1,).
+        Tuple[Tensor, Tensor]: 
+            - colors (Tensor): Predicted colors.
+            - densities (Tensor): Predicted densities.
     """
-    # Get stratified samples along one ray
-    stratified_samples = stratified_sampling(near, far, num_bins, device)
-    # Compute deltas from stratified samples
-    deltas = stratified_samples[1:] - stratified_samples[:-1]
-    delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)
-    deltas = torch.cat([deltas, delta_inf], dim=0)
-    # Compute sample positions for each ray in the batch
-    sample_positions = rays_o_batch.unsqueeze(1) + stratified_samples.unsqueeze(0).unsqueeze(-1) * rays_d_batch.unsqueeze(1)
-    return sample_positions, deltas
-
-
-def query_model(model, sample_positions_flat: Tensor, directions_flat: Tensor, near: float, far: float):
-    """
-    Normalizes sample positions and queries the model to obtain colors and densities.
-
-    Args:
-        model: Neural network predicting colors and densities.
-        sample_positions_flat (Tensor): Flattened sample positions (N, 3).
-        directions_flat (Tensor): Flattened ray directions corresponding to the sample positions (N, 3).
-        near (float): Near bound.
-        far (float): Far bound.
-
-    Returns:
-        Tuple[Tensor, Tensor]: colors_flat (N, 3) and densities_flat (N,)
-    """
-    # Normalize positions to the model's expected input range
     sample_positions_normalized = normalize_positions(sample_positions_flat, near, far)
     return model.forward(sample_positions_normalized, directions_flat)
 
 
-def composite_volume(colors: Tensor, densities: Tensor, deltas: Tensor, white_background: bool) -> Tensor:
+def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
     """
-    Performs volumetric rendering (alpha compositing) to compute final RGB colors for each ray.
+    Compute cumulative transmittance along rays.
 
     Args:
-        colors (Tensor): Colors predicted by the model (B, num_bins, 3).
-        densities (Tensor): Densities predicted by the model (B, num_bins).
-        deltas (Tensor): Deltas between adjacent sample positions (num_bins+1,).
-        white_background (bool): If True, composite with a white background.
+        betas (Tensor): Complement of alpha values (1 - alpha) for each sample.
 
     Returns:
-        Tensor: Composite RGB colors for each ray (B, 3).
+        Tensor: Accumulated transmittance along each ray.
     """
-    # Compute alpha values
+    accum_trans = torch.cumprod(betas, dim=1)
+    # Prepend a 1 so the transmittance for the first sample is 1
+    init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)
+    return torch.cat((init, accum_trans[:, :-1]), dim=1)
+
+
+def composite_volume(
+    colors: Tensor,
+    densities: Tensor,
+    deltas: Tensor,
+    white_background: bool
+) -> Tensor:
+    """
+    Composite colors along each ray using volumetric rendering.
+
+    Args:
+        colors (Tensor): Colors predicted by the model.
+        densities (Tensor): Densities predicted by the model.
+        deltas (Tensor): Intervals between sampled positions.
+        white_background (bool): Flag indicating whether to composite with a white background.
+
+    Returns:
+        Tensor: Composite RGB colors for each ray.
+    """
+    # alpha_i = 1 - exp(-sigma_i * delta_i)
     alpha = 1 - torch.exp(-densities * deltas.unsqueeze(0))
-    # Compute weights along the ray
+
+    # weights_i = T_i * alpha_i
     weights = compute_accumulated_transmittance(1 - alpha) * alpha
-    # Composite the colors
+
+    # Final composite color
     comp_rgb = (weights.unsqueeze(-1) * colors).sum(dim=1)
+
+    # If we assume a white background, add the remainder
     if white_background:
         comp_rgb = comp_rgb + (1 - weights.sum(dim=1, keepdim=True))
+
     return comp_rgb
 
 
 def render_nerf(
-    model,
-    rays_o,
-    rays_d,
-    near,
-    far,
-    num_coarse=64,
-    device='cpu',
-    white_background=True,
-    chunk_size=8192  # 1024 * 8
-):
+    model: torch.nn.Module,
+    rays_o: Tensor,
+    rays_d: Tensor,
+    near: float,
+    far: float,
+    num_samples: int = 256,
+    device: str = 'cpu',
+    white_background: bool = True,
+    chunk_size: int = 8192
+) -> Tensor:
     """
     Render rays via volumetric rendering using a NeRF model.
 
-    This function performs the following steps:
-      1. Normalizes ray directions.
-      2. Splits the rays into chunks.
-      3. For each chunk:
-         - Generates stratified sample positions and deltas.
-         - Flattens sample positions and expands ray directions.
-         - Queries the model to get colors and densities.
-         - Applies volumetric rendering (alpha compositing) to compute final RGB values.
-
     Args:
-        model: Neural network predicting colors and densities.
-        rays_o (Tensor): Ray origins (N, 3).
-        rays_d (Tensor): Ray directions (N, 3).
-        near (float): Near bound for sampling.
-        far (float): Far bound for sampling.
-        num_bins (int, optional): Number of samples per ray. Default is 100.
-        device (str, optional): Computation device. Default is 'cpu'.
-        white_background (bool, optional): Use white background for compositing.
-        chunk_size (int, optional): Number of rays processed per chunk.
+        model (torch.nn.Module): NeRF model.
+        rays_o (Tensor): Ray origins.
+        rays_d (Tensor): Ray directions.
+        near (float): Near bound.
+        far (float): Far bound.
+        num_samples (int, optional): Number of samples per ray.
+        device (str, optional): Computation device.
+        white_background (bool, optional): Use a white background.
+        chunk_size (int, optional): Number of rays to process per chunk.
 
     Returns:
-        Tensor: Rendered RGB colors for each ray (N, 3).
+        Tensor: Rendered RGB colors for each ray.
     """
+    # Ensure data is on the specified device
     rays_o = rays_o.to(device)
-    rays_d = normalize_directions(rays_d.to(device))
-    
-    coarse_rgb = []
+    rays_d = rays_d.to(device)
+
+    # Storage for all chunked results
+    rgb_out = []
+
     for i in range(0, rays_o.shape[0], chunk_size):
-        # Process rays in chunks
+        # Chunk the rays to avoid OOM for large batches
         rays_o_chunk = rays_o[i:i + chunk_size]
         rays_d_chunk = rays_d[i:i + chunk_size]
 
-        # Generate stratified sample positions and deltas
-        coarse_sample_positions, coarse_deltas = generate_coarse_positions(rays_o_chunk, rays_d_chunk, near, far, num_coarse, device)
-        coarse_sample_positions_flat = coarse_sample_positions.reshape(-1, 3)
-        coarse_expanded_dirs = rays_d_chunk.unsqueeze(1).expand(-1, num_coarse, -1).reshape(-1, 3)
+        # Sample positions along each ray
+        sample_positions, deltas = generate_sample_positions(
+            rays_o_chunk,
+            rays_d_chunk,
+            near,
+            far,
+            num_samples,
+            device
+        )
 
-        # Query the model (MLP call) to obtain colors and densities
-        coarse_colors_flat, coarse_densities_flat = query_model(model, coarse_sample_positions_flat, coarse_expanded_dirs, near, far)
-        coarse_colors = coarse_colors_flat.reshape(rays_o_chunk.shape[0], num_coarse, 3)
-        coarse_densities = coarse_densities_flat.reshape(rays_o_chunk.shape[0], num_coarse)
+        # Flatten for batching into the network
+        sample_positions_flat = sample_positions.reshape(-1, 3)
+        directions_flat = (
+            rays_d_chunk
+            .unsqueeze(1)
+            .expand(-1, num_samples, -1)
+            .reshape(-1, 3)
+        )
 
-        # Perform volumetric rendering via alpha compositing
-        coarse_comp_rgb = composite_volume(coarse_colors, coarse_densities, coarse_deltas, white_background)
-        coarse_rgb.append(coarse_comp_rgb)
+        # Query the model for colors & densities
+        colors_flat, densities_flat = query_model(
+            model,
+            sample_positions_flat,
+            directions_flat,
+            near,
+            far
+        )
+        
+        # Reshape back to [batch, num_samples, ...]
+        colors = colors_flat.reshape(rays_o_chunk.shape[0], num_samples, 3)
+        densities = densities_flat.reshape(rays_o_chunk.shape[0], num_samples)
 
-    return torch.cat(coarse_rgb, dim=0)
+        # Composite final color per ray
+        composed_rgb = composite_volume(colors, densities, deltas, white_background)
+        rgb_out.append(composed_rgb)
+
+    # Concatenate results for all chunks
+    return torch.cat(rgb_out, dim=0)

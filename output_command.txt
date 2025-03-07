@@ -1,4 +1,4 @@
-$files = @("./train.py", "nerf/data.py", "nerf/encoding.py", "nerf/loss.py", "nerf/models.py", "nerf/rendering.py")
+$files = @("./train.py", "./eval.py", "nerf/data.py", "nerf/encoding.py", "nerf/loss.py", "nerf/models.py", "nerf/rendering.py")
 
 $output = "output_file.txt"
 Remove-Item $output -ErrorAction SilentlyContinue

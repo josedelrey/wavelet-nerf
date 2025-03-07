@@ -1,0 +1,11 @@
+Remaining NeRF implementations:
+- Hierarchical sampling
+- Details in the original NeRF implementation such as adding noise to the inputs
+
+TODO:
+- Implement Siren model architecture
+- Implement KiloNeRF
+- Implement FastNeRF
+- Implement PlenOctrees
+- Implement Instant NGP
+- Implement Plenoxels
