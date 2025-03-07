@@ -36,15 +36,15 @@ class NeRFModel(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim + 1) # Last neuron outputs density
+            nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
         )
 
         # RGB head: predicts view-dependent color from features and encoded ray direction
         self.rgb_head = nn.Sequential(
-            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2), # Concatenate with ray direction
+            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2),  # Concatenate with ray direction
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid() # Map output to [0, 1]
+            nn.Sigmoid()  # Map output to [0, 1]
         )
 
         self.pos_encoding_dim = pos_encoding_dim
