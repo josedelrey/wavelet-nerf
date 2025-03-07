@@ -1,33 +1,40 @@
-# Configuration file for NeRF training on the Lego dataset
+# =============================================================================
+# NeRF Training Configuration for Lego Dataset
+# =============================================================================
 
-# Dataset directory
-datadir = ./datasets/lego
+# --------------------
+# Dataset Parameters
+# --------------------
+datadir = ./datasets/lego          # Directory containing the dataset
 
-# Number of random rays sampled per iteration
-num_random_rays = 1024
+# --------------------
+# Sampling Parameters
+# --------------------
+num_random_rays = 1024             # Number of random rays sampled per iteration
+chunk_size = 8192                  # Number of rays processed in a single rendering batch
+num_samples = 256                  # Number of samples along each ray
 
-# Number of rays processed in a single rendering batch
-render_batch_size = 16384
+# --------------------
+# Training Parameters
+# --------------------
+num_iters = 150000                 # Total number of training iterations
+learning_rate = 5e-4               # Learning rate for the optimizer
+near = 2.0                         # Near bound for ray sampling
+far = 6.0                          # Far bound for ray sampling
 
-# Total number of training iterations
-num_iters = 150000
+# --------------------
+# Model Saving Parameters
+# --------------------
+save_path = ./models               # Directory to save trained models
+save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
-# Learning rate for the optimizer
-learning_rate = 5e-4
+# --------------------
+# Learning Rate Decay Settings
+# --------------------
+lr_decay = 150                     # Number of 1000-step intervals for decay
+lr_decay_factor = 0.1              # Factor to multiply the learning rate after each decay interval
 
-# Near and far bounds for ray sampling
-near = 2.0
-far = 6.0
-
-# Path to save trained models
-save_path = ./models
-
-# Path to checkpoint for evaluation
-checkpoint_path = ./models/nerf_model_final.pth
-
-# Interval (in iterations) for saving model checkpoints
-save_interval = 5000
-
-# Learning rate decay settings
-lr_decay = 150           # Number of 1000-step intervals after which the learning rate decays by the specified factor
-lr_decay_factor = 0.1    # Factor by which the learning rate is multiplied after each decay interval
+# =============================================================================
+# Evaluation Parameters
+# =============================================================================
+checkpoint_path = ./models/nerf_model_final.pth   # Path to checkpoint for evaluation

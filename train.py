@@ -68,8 +68,9 @@ def main():
     config = parse_config(args.config)
 
     dataset_path = config.get('datadir', './datasets/lego')
-    num_random_rays = int(config.get('num_random_rays', 4096))
-    render_batch_size = int(config.get('render_batch_size', 1024))
+    num_random_rays = int(config.get('num_random_rays', 1024))
+    chunk_size = int(config.get('chunk_size', 8192))
+    num_samples = int(config.get('num_samples', 256))
     num_iters = int(config.get('num_iters', 150000))
     learning_rate = float(config.get('learning_rate', 5e-4))
     near = float(config.get('near', 2.0))
@@ -127,10 +128,10 @@ def main():
             rays_d_batch,
             near,
             far,
-            num_samples=256,
-            device=device,
-            white_background=True,
-            chunk_size=render_batch_size
+            num_samples = num_samples,
+            device = device,
+            white_background = True,
+            chunk_size = chunk_size
         )
 
         # Compute loss and update the model
