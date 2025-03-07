@@ -82,7 +82,7 @@ class SirenNeRFModel(nn.Module):
     NeRF variant using SIREN activations.
     Processes raw 3D points and ray directions with sine-based MLPs.
     """
-    def __init__(self, w0: float = 30, hidden_dim: int = 256):
+    def __init__(self, w0: float = 30, hidden_w0: float = 1, hidden_dim: int = 256):
         super(SirenNeRFModel, self).__init__()
         
         # First MLP block: processes raw 3D point coordinates
@@ -90,32 +90,32 @@ class SirenNeRFModel(nn.Module):
             nn.Linear(3, hidden_dim),  # 3D point input
             SineLayer(w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0)
+            SineLayer(hidden_w0)
         )
 
         # Second MLP block: refines features and predicts density
         self.block2 = nn.Sequential(
             nn.Linear(hidden_dim + 3, hidden_dim),  # Skip connection with original point
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
         )
 
         # RGB head: predicts view-dependent color from features and ray direction
         self.rgb_head = nn.Sequential(
             nn.Linear(hidden_dim + 3, hidden_dim // 2),  # Concatenate with ray direction
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim // 2, 3),
             nn.Sigmoid()  # Map output to [0, 1]
         )
@@ -130,20 +130,20 @@ class SirenNeRFModel(nn.Module):
                     if i == 0:  # first layer of block1
                         bound = 1 / module.in_features
                     else:
-                        bound = np.sqrt(6 / module.in_features) / w0
+                        bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
             
             # Initialize block2 linear layers
             for i, module in enumerate(self.block2):
                 if isinstance(module, nn.Linear):
-                    bound = np.sqrt(6 / module.in_features) / w0
+                    bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
             
             # Initialize RGB head first linear layer
             for i, module in enumerate(self.rgb_head):
                 if isinstance(module, nn.Linear):
                     if i == 0:
-                        bound = np.sqrt(6 / module.in_features) / w0
+                        bound = np.sqrt(6 / module.in_features) / hidden_w0
                         module.weight.uniform_(-bound, bound)
 
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
