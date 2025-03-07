@@ -1,4 +1,4 @@
-import os
+import time
 import argparse
 import numpy as np
 import torch
@@ -81,6 +81,7 @@ def main():
     model.eval()
 
     # Render the test image
+    start_time = time.perf_counter()
     with torch.no_grad():
         pred_rgb = render_nerf(
             model,
@@ -93,6 +94,9 @@ def main():
             white_background=white_background,
             chunk_size=chunk_size
         )
+        end_time = time.perf_counter()
+    inference_time = end_time - start_time
+    print(f"Inference took {inference_time:.2f} seconds.")
 
     # Reshape the predicted rays into an image
     rendered_image = pred_rgb.cpu().numpy().reshape(H, W, 3)

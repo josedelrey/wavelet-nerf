@@ -11,7 +11,7 @@ datadir = ./datasets/lego          # Directory containing the dataset
 # Sampling Parameters
 # --------------------
 num_random_rays = 1024             # Number of random rays sampled per iteration
-chunk_size = 8192                  # Number of rays processed in a single rendering batch
+chunk_size = 4096                  # Number of rays processed in a single rendering batch
 num_samples = 256                  # Number of samples along each ray
 
 # --------------------
