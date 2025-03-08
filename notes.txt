@@ -3,9 +3,12 @@ Remaining NeRF implementations:
 - Details in the original NeRF implementation such as adding noise to the inputs
 
 Siren implementation:
-- Try using w0 = 30 for the first layer and w = 1 for the rest
+- Try using [-1, 1] position normalization instead of the current [0, 1]
+    + [0, 1] PSNR: 26.25 at 120k iterations
+    + [-1, 1] PSNR:
 
 TODO:
+- Implement GaborNet
 - Implement KiloNeRF
 - Implement FastNeRF
 - Implement PlenOctrees

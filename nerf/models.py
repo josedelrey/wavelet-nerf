@@ -122,7 +122,7 @@ class SirenNeRFModel(nn.Module):
 
         # Weight initialization for SIREN layers
         # First layer: U(-1/in_features, 1/in_features)
-        # Subsequent layers: U(-sqrt(6/in_features)/w0, sqrt(6/in_features)/w0)
+        # Subsequent layers: U(-sqrt(6/in_features)/hidden_w0, sqrt(6/in_features)/hidden_w0)
         with torch.no_grad():
             # Initialize block1 linear layers
             for i, module in enumerate(self.block1):

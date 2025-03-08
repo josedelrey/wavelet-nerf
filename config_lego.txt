@@ -18,7 +18,7 @@ num_samples = 256                  # Number of samples along each ray
 # Training Parameters
 # --------------------
 num_iters = 150000                 # Total number of training iterations
-learning_rate = 1e-4               # Learning rate for the optimizer
+learning_rate = 5e-4               # Learning rate for the optimizer
 near = 2.0                         # Near bound for ray sampling
 far = 6.0                          # Far bound for ray sampling
 

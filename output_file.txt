@@ -133,6 +133,7 @@ def main():
 
     start_time = datetime.datetime.now()
 
+    os.makedirs('./logs', exist_ok=True)
     writer = SummaryWriter(log_dir='./logs')
     writer.add_text('config', str(config))
 
@@ -190,13 +191,13 @@ def main():
 
         # Save model checkpoint
         if step % save_interval == 0 and step > 0:
-            model_filename = os.path.join(save_path, f"nerf_model_{step:07d}.pth")
+            model_filename = os.path.join(save_path, f"{model_type}_model_{step:07d}.pth")
             torch.save(model.state_dict(), model_filename)
             elapsed_str = format_elapsed_time(start_time)
             tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
     # Save final model
-    final_model_path = os.path.join(save_path, "nerf_model_final.pth")
+    final_model_path = os.path.join(save_path, f"{model_type}_model_final.pth")
     torch.save(model.state_dict(), final_model_path)
     elapsed_str = format_elapsed_time(start_time)
     tqdm.write(f"[{elapsed_str}] Training complete!")
@@ -512,15 +513,15 @@ class NeRFModel(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim + 1) # Last neuron outputs density
+            nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
         )
 
         # RGB head: predicts view-dependent color from features and encoded ray direction
         self.rgb_head = nn.Sequential(
-            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2), # Concatenate with ray direction
+            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2),  # Concatenate with ray direction
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid() # Map output to [0, 1]
+            nn.Sigmoid()  # Map output to [0, 1]
         )
 
         self.pos_encoding_dim = pos_encoding_dim
@@ -558,7 +559,7 @@ class SirenNeRFModel(nn.Module):
     NeRF variant using SIREN activations.
     Processes raw 3D points and ray directions with sine-based MLPs.
     """
-    def __init__(self, w0: float = 30, hidden_dim: int = 256):
+    def __init__(self, w0: float = 30, hidden_w0: float = 1, hidden_dim: int = 256):
         super(SirenNeRFModel, self).__init__()
         
         # First MLP block: processes raw 3D point coordinates
@@ -566,39 +567,39 @@ class SirenNeRFModel(nn.Module):
             nn.Linear(3, hidden_dim),  # 3D point input
             SineLayer(w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0)
+            SineLayer(hidden_w0)
         )
 
         # Second MLP block: refines features and predicts density
         self.block2 = nn.Sequential(
             nn.Linear(hidden_dim + 3, hidden_dim),  # Skip connection with original point
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
         )
 
         # RGB head: predicts view-dependent color from features and ray direction
         self.rgb_head = nn.Sequential(
             nn.Linear(hidden_dim + 3, hidden_dim // 2),  # Concatenate with ray direction
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim // 2, 3),
             nn.Sigmoid()  # Map output to [0, 1]
         )
 
         # Weight initialization for SIREN layers
         # First layer: U(-1/in_features, 1/in_features)
-        # Subsequent layers: U(-sqrt(6/in_features)/w0, sqrt(6/in_features)/w0)
+        # Subsequent layers: U(-sqrt(6/in_features)/hidden_w0, sqrt(6/in_features)/hidden_w0)
         with torch.no_grad():
             # Initialize block1 linear layers
             for i, module in enumerate(self.block1):
@@ -606,20 +607,20 @@ class SirenNeRFModel(nn.Module):
                     if i == 0:  # first layer of block1
                         bound = 1 / module.in_features
                     else:
-                        bound = np.sqrt(6 / module.in_features) / w0
+                        bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
             
             # Initialize block2 linear layers
             for i, module in enumerate(self.block2):
                 if isinstance(module, nn.Linear):
-                    bound = np.sqrt(6 / module.in_features) / w0
+                    bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
             
             # Initialize RGB head first linear layer
             for i, module in enumerate(self.rgb_head):
                 if isinstance(module, nn.Linear):
                     if i == 0:
-                        bound = np.sqrt(6 / module.in_features) / w0
+                        bound = np.sqrt(6 / module.in_features) / hidden_w0
                         module.weight.uniform_(-bound, bound)
 
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:

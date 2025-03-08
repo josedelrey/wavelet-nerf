@@ -28,10 +28,8 @@ def parse_config(config_path: str) -> dict:
             if not line or line.startswith('#'):
                 continue
 
-            # Remove inline comments
             line = line.split('#', 1)[0].strip()
 
-            # Skip lines that become empty after removing comments
             if not line:
                 continue
 
@@ -58,12 +56,14 @@ def format_elapsed_time(start_time: datetime.datetime) -> str:
 
 
 def main():
-    # Load configuration
+    # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Train NeRF on a given dataset using volumetric rendering."
     )
     parser.add_argument('--config', type=str, required=True,
-                        help='Path to configuration file (e.g. config_lego.txt)')
+                        help='Path to configuration file')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to a checkpoint file to resume training from')
     args = parser.parse_args()
     config = parse_config(args.config)
 
@@ -125,82 +125,126 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
 
-    # Learning rate scheduler with exponential decay
+    # Learning rate scheduler
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
     scheduler = ExponentialLR(optimizer, gamma=gamma)
 
-    start_time = datetime.datetime.now()
-
-    os.makedirs('./logs', exist_ok=True)
-    writer = SummaryWriter(log_dir='./logs')
+    # TensorBoard writer
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    log_dir = f"./logs/{model_type}_{os.path.basename(dataset_path)}_{timestamp}"
+    os.makedirs(log_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=log_dir)
     writer.add_text('config', str(config))
 
-    # Training loop with tqdm progress bar
-    for step in tqdm(range(num_iters), desc="Training", unit="it"):
-        # Randomly select an image from the dataset
-        img_idx = np.random.randint(0, N)
+    # Resume training from a checkpoint
+    start_iter = 0
+    start_time = datetime.datetime.now()
+    if args.resume is not None:
+        checkpoint = torch.load(args.resume, map_location='cpu')
+        model.load_state_dict(checkpoint['model_state_dict'], weight_only=True)
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        start_iter = checkpoint['step']
+        tqdm.write(f"Resuming training from iteration {start_iter}")
 
-        # Get the rays and target pixels for the selected image
-        rays_o_image_np = rays_o[img_idx]
-        rays_d_image_np = rays_d[img_idx]
-        target_pixels_image_np = target_pixels[img_idx]
-        rays_o_image = torch.from_numpy(rays_o_image_np).float().to(device).squeeze(0)
-        rays_d_image = torch.from_numpy(rays_d_image_np).float().to(device).squeeze(0)
-        target_pixels_image = torch.from_numpy(target_pixels_image_np).float().to(device).squeeze(0)
+    # Training loop
+    try:
+        for step in tqdm(range(start_iter, num_iters), desc="Training", unit="it"):
+            # Randomly select an image from the dataset
+            img_idx = np.random.randint(0, N)
 
-        # Randomly sample a subset of rays for this iteration
-        num_pixels = rays_o_image.shape[0]
-        sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
-        rays_o_batch = rays_o_image[sel_inds]
-        rays_d_batch = rays_d_image[sel_inds]
-        target_rgb = target_pixels_image[sel_inds]
+            # Get the rays and target pixels for the selected image
+            rays_o_image_np = rays_o[img_idx]
+            rays_d_image_np = rays_d[img_idx]
+            target_pixels_image_np = target_pixels[img_idx]
+            rays_o_image = torch.from_numpy(rays_o_image_np).float().to(device).squeeze(0)
+            rays_d_image = torch.from_numpy(rays_d_image_np).float().to(device).squeeze(0)
+            target_pixels_image = torch.from_numpy(target_pixels_image_np).float().to(device).squeeze(0)
 
-        # Use render_volume to compute the predicted color along each ray
-        pred_rgb = render_nerf(
-            model,
-            rays_o_batch,
-            rays_d_batch,
-            near,
-            far,
-            num_samples = num_samples,
-            device = device,
-            white_background = True,
-            chunk_size = chunk_size
-        )
+            # Randomly sample a subset of rays for this iteration
+            num_pixels = rays_o_image.shape[0]
+            sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
+            rays_o_batch = rays_o_image[sel_inds]
+            rays_d_batch = rays_d_image[sel_inds]
+            target_rgb = target_pixels_image[sel_inds]
 
-        # Compute loss and update the model
-        optimizer.zero_grad()
-        loss = mse_loss(pred_rgb, target_rgb)
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
+            # Use render_volume to compute the predicted color along each ray
+            pred_rgb = render_nerf(
+                model,
+                rays_o_batch,
+                rays_d_batch,
+                near,
+                far,
+                num_samples = num_samples,
+                device = device,
+                white_background = True,
+                chunk_size = chunk_size
+            )
 
-        # Log loss and PSNR
-        if step % 10 == 0:
-            current_lr = scheduler.get_last_lr()[0]
-            elapsed_str = format_elapsed_time(start_time)
-            log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
-                           f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
-            tqdm.write(log_message)
+            # Compute loss and update the model
+            optimizer.zero_grad()
+            loss = mse_loss(pred_rgb, target_rgb)
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
 
-            # Log loss and PSNR to TensorBoard
-            writer.add_scalar('loss', loss.item(), step)
-            writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
+            # Log loss and PSNR
+            if step % 10 == 0:
+                current_lr = scheduler.get_last_lr()[0]
+                elapsed_str = format_elapsed_time(start_time)
+                log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
+                            f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
+                tqdm.write(log_message)
 
-        # Save model checkpoint
-        if step % save_interval == 0 and step > 0:
-            model_filename = os.path.join(save_path, f"{model_type}_model_{step:07d}.pth")
-            torch.save(model.state_dict(), model_filename)
-            elapsed_str = format_elapsed_time(start_time)
-            tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
+                # Log loss and PSNR to TensorBoard
+                writer.add_scalar('loss', loss.item(), step)
+                writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
 
-    # Save final model
-    final_model_path = os.path.join(save_path, f"{model_type}_model_final.pth")
-    torch.save(model.state_dict(), final_model_path)
-    elapsed_str = format_elapsed_time(start_time)
-    tqdm.write(f"[{elapsed_str}] Training complete!")
-    tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
+            if step % save_interval == 0 and step > 0 and step < num_iters - 1:
+                # Delete previous checkpoints
+                for filename in os.listdir(save_path):
+                    file_path = os.path.join(save_path, filename)
+                    if os.path.isfile(file_path) and filename.endswith('.pth'):
+                        os.remove(file_path)
 
+                # Save model checkpoint with training state
+                checkpoint_dict = {
+                    'step': step,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler_state_dict': scheduler.state_dict()
+                }
+                model_filename = os.path.join(save_path, f"{model_type}_model_{step:07d}.pth")
+                torch.save(checkpoint_dict, model_filename)
+                elapsed_str = format_elapsed_time(start_time)
+                tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
+
+        # Save final model
+        final_model_path = os.path.join(save_path, f"{model_type}_model_final.pth")
+        final_checkpoint_dict = {
+            'step': num_iters,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict()
+        }
+        torch.save(final_checkpoint_dict, final_model_path)
+        elapsed_str = format_elapsed_time(start_time)
+        tqdm.write(f"[{elapsed_str}] Training complete!")
+        tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
+
+    except KeyboardInterrupt:
+        # Handle the keyboard interrupt: save current checkpoint
+        elapsed_str = format_elapsed_time(start_time)
+        tqdm.write(f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint...")
+        checkpoint_dict = {
+            'step': step,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict()
+        }
+        interrupt_checkpoint_path = os.path.join(save_path, f"{model_type}_model_interrupt_{step:07d}.pth")
+        torch.save(checkpoint_dict, interrupt_checkpoint_path)
+        tqdm.write(f"[{elapsed_str}] Checkpoint saved to {interrupt_checkpoint_path}. Exiting training.")
 
 if __name__ == '__main__':
     main()
