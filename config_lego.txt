@@ -31,7 +31,7 @@ save_interval = 5000               # Interval (in iterations) for saving model c
 # --------------------
 # Learning Rate Decay Parameters
 # --------------------
-lr_decay = 150                     # Number of 1000-step intervals for decay
+lr_decay = 150                    # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate after each decay interval
 
 # --------------------
@@ -42,8 +42,8 @@ model_type = siren
 # --------------------
 # Monitoring Parameters
 # --------------------
-log_interval =                     # Interval (in iterations) for logging training metrics
-val_interval =                     # Interval (in iterations) for running validation
+log_interval = 10                      # Interval (in iterations) for logging training metrics
+val_interval = 1000                    # Interval (in iterations) for running validation
 
 # =============================================================================
 # Evaluation Parameters
