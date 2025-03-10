@@ -25,13 +25,13 @@ far = 6.0                          # Far bound for ray sampling
 # --------------------
 # Model Saving Parameters
 # --------------------
-save_path = ./models/siren               # Directory to save trained models
+save_path = ./models/siren         # Directory to save trained models
 save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
 # --------------------
 # Learning Rate Decay Parameters
 # --------------------
-lr_decay = 150                    # Number of 1000-step intervals for decay
+lr_decay = 150                     # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate after each decay interval
 
 # --------------------

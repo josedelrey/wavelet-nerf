@@ -7,9 +7,10 @@ import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 from torch.optim.lr_scheduler import ExponentialLR
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from nerf.data import load_dataset, compute_rays
+from nerf.data import load_dataset, compute_rays, RayDataset
 from nerf.models import NeRFModel, SirenNeRFModel
 from nerf.rendering import render_nerf
 from nerf.loss import mse_to_psnr
@@ -125,7 +126,12 @@ def main():
     print("Loading training dataset...")
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
     rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
-    N = images_np.shape[0]
+
+    # Create the dataset and DataLoader
+    dataset = RayDataset(rays_o, rays_d, target_pixels)
+    data_loader = DataLoader(dataset, batch_size=num_random_rays, shuffle=True)
+    # Create an iterator from the DataLoader to reuse in the training loop
+    loader_iter = iter(data_loader)
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
@@ -156,61 +162,52 @@ def main():
     try:
         with tqdm(total=num_iters, initial=start_iter, desc="Training", unit="it") as pbar:
             for step in range(start_iter, num_iters):
-                # Randomly select an image from the dataset
-                img_idx = np.random.randint(0, N)
-
-                # Get the rays and target pixels for the selected image
-                rays_o_image_np = rays_o[img_idx]
-                rays_d_image_np = rays_d[img_idx]
-                target_pixels_image_np = target_pixels[img_idx]
-                rays_o_image = torch.from_numpy(rays_o_image_np).float().to(device).squeeze(0)
-                rays_d_image = torch.from_numpy(rays_d_image_np).float().to(device).squeeze(0)
-                target_pixels_image = torch.from_numpy(target_pixels_image_np).float().to(device).squeeze(0)
-
-                # Randomly sample a subset of rays for this iteration
-                num_pixels = rays_o_image.shape[0]
-                sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
-                rays_o_batch = rays_o_image[sel_inds]
-                rays_d_batch = rays_d_image[sel_inds]
-                target_rgb = target_pixels_image[sel_inds]
-
-                # Use render_volume to compute the predicted color along each ray
+                try:
+                    # Get the next batch from DataLoader
+                    rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
+                except StopIteration:
+                    # Reinitialize iterator if the DataLoader is exhausted
+                    loader_iter = iter(data_loader)
+                    rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
+                
+                rays_o_batch = rays_o_batch.to(device)
+                rays_d_batch = rays_d_batch.to(device)
+                target_rgb_batch = target_rgb_batch.to(device)
+                
+                # Render using your model
                 pred_rgb = render_nerf(
                     model,
                     rays_o_batch,
                     rays_d_batch,
                     near,
                     far,
-                    num_samples = num_samples,
-                    device = device,
-                    white_background = True,
-                    chunk_size = chunk_size
+                    num_samples=num_samples,
+                    device=device,
+                    white_background=True,
+                    chunk_size=chunk_size
                 )
 
-                # Compute loss and update the model
+                # Compute loss, backpropagate, and update model
                 optimizer.zero_grad()
-                loss = mse_loss(pred_rgb, target_rgb)
+                loss = mse_loss(pred_rgb, target_rgb_batch)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                # Update progress bar
                 pbar.update(1)
 
-                # Log loss and PSNR
+                # Log metrics and write to TensorBoard at the specified interval
                 if step % log_interval == 0:
                     current_lr = scheduler.get_last_lr()[0]
                     elapsed_str = format_elapsed_time(start_time)
                     log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
-                                   f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
+                                f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
                     tqdm.write(log_message)
-
-                    # Log loss and PSNR to TensorBoard
                     writer.add_scalar('loss', loss.item(), step)
                     writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
 
+                # Save checkpoints at intervals
                 if step % save_interval == 0 and step > 0 and step < num_iters - 1:
-                    # Save model checkpoint with training state
                     checkpoint_dict = {
                         'step': step,
                         'model_state_dict': model.state_dict(),
@@ -222,7 +219,7 @@ def main():
                     elapsed_str = format_elapsed_time(start_time)
                     tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
-            # Save final model
+            # Save final model after training is complete
             final_model_path = os.path.join(save_path, f"{model_type}_model_final.pth")
             final_checkpoint_dict = {
                 'step': num_iters,
@@ -236,7 +233,7 @@ def main():
             tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
 
     except KeyboardInterrupt:
-        # Handle the keyboard interrupt: save current checkpoint
+        # Save checkpoint on keyboard interrupt
         elapsed_str = format_elapsed_time(start_time)
         tqdm.write(f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint...")
         checkpoint_dict = {
@@ -248,6 +245,7 @@ def main():
         interrupt_checkpoint_path = os.path.join(save_path, f"{model_type}_model_interrupt_{step:07d}.pth")
         torch.save(checkpoint_dict, interrupt_checkpoint_path)
         tqdm.write(f"[{elapsed_str}] Checkpoint saved to {interrupt_checkpoint_path}. Exiting training.")
+
 
 if __name__ == '__main__':
     main()

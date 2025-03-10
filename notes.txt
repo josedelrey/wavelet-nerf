@@ -12,6 +12,9 @@ TODO:
     + Implement Plenoxels
 
 TODO Today:
-- Implement more robust dataloader
+- Arrange all rays in shuffled batch-size batches pre-training and choose randomly from them
 - Implement early stopping if overfitting based in validation set
 - Research the use of FP16 for NeRF so it improves performance
+
+Current performance:
+- Training time for SIREN: 1.7-1.8 it/s

@@ -1,8 +1,10 @@
 import os
 import json
+import torch
 import numpy as np
 import imageio.v2 as imageio
 from typing import Tuple
+from torch.utils.data import Dataset
 
 
 def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, float]:
@@ -105,3 +107,17 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     rays_d = rays_d.reshape(N, -1, 3)
 
     return rays_o, rays_d, target_pixels
+
+
+class RayDataset(Dataset):
+    def __init__(self, rays_o, rays_d, target_pixels):
+        # Flatten arrays from shape (N, H*W, 3) to (total_rays, 3)
+        self.rays_o = torch.from_numpy(rays_o.reshape(-1, 3)).float()
+        self.rays_d = torch.from_numpy(rays_d.reshape(-1, 3)).float()
+        self.target_pixels = torch.from_numpy(target_pixels.reshape(-1, 3)).float()
+
+    def __len__(self):
+        return self.rays_o.shape[0]
+
+    def __getitem__(self, idx):
+        return self.rays_o[idx], self.rays_d[idx], self.target_pixels[idx]
