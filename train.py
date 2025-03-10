@@ -56,6 +56,34 @@ def format_elapsed_time(start_time: datetime.datetime) -> str:
     )
 
 
+def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, prefix=""):
+    """
+    Save the training checkpoint.
+    """
+    checkpoint_dict = {
+        'step': step,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict()
+    }
+    model_filename = os.path.join(save_path, f"{model_type}_model_{prefix}{step:07d}.pth")
+    torch.save(checkpoint_dict, model_filename)
+    return model_filename
+
+
+def log_training_metrics(step, scheduler, loss, start_time, writer):
+    """
+    Log training metrics.
+    """
+    current_lr = scheduler.get_last_lr()[0]
+    elapsed_str = format_elapsed_time(start_time)
+    log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
+                   f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
+    tqdm.write(log_message)
+    writer.add_scalar('loss', loss.item(), step)
+    writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
+
+
 def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(
@@ -130,7 +158,6 @@ def main():
     # Create the dataset and DataLoader
     dataset = RayDataset(rays_o, rays_d, target_pixels)
     data_loader = DataLoader(dataset, batch_size=num_random_rays, shuffle=True)
-    # Create an iterator from the DataLoader to reuse in the training loop
     loader_iter = iter(data_loader)
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -163,7 +190,7 @@ def main():
         with tqdm(total=num_iters, initial=start_iter, desc="Training", unit="it") as pbar:
             for step in range(start_iter, num_iters):
                 try:
-                    # Get the next batch from DataLoader
+                    # Get the next batch from the DataLoader
                     rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
                 except StopIteration:
                     # Reinitialize iterator if the DataLoader is exhausted
@@ -198,24 +225,11 @@ def main():
 
                 # Log metrics and write to TensorBoard at the specified interval
                 if step % log_interval == 0:
-                    current_lr = scheduler.get_last_lr()[0]
-                    elapsed_str = format_elapsed_time(start_time)
-                    log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
-                                f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
-                    tqdm.write(log_message)
-                    writer.add_scalar('loss', loss.item(), step)
-                    writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
+                    log_training_metrics(step, scheduler, loss, start_time, writer)
 
                 # Save checkpoints at intervals
                 if step % save_interval == 0 and step > 0 and step < num_iters - 1:
-                    checkpoint_dict = {
-                        'step': step,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'scheduler_state_dict': scheduler.state_dict()
-                    }
-                    model_filename = os.path.join(save_path, f"{model_type}_model_{step:07d}.pth")
-                    torch.save(checkpoint_dict, model_filename)
+                    model_filename = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
                     elapsed_str = format_elapsed_time(start_time)
                     tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
@@ -236,14 +250,7 @@ def main():
         # Save checkpoint on keyboard interrupt
         elapsed_str = format_elapsed_time(start_time)
         tqdm.write(f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint...")
-        checkpoint_dict = {
-            'step': step,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'scheduler_state_dict': scheduler.state_dict()
-        }
-        interrupt_checkpoint_path = os.path.join(save_path, f"{model_type}_model_interrupt_{step:07d}.pth")
-        torch.save(checkpoint_dict, interrupt_checkpoint_path)
+        interrupt_checkpoint_path = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, prefix="interrupt_")
         tqdm.write(f"[{elapsed_str}] Checkpoint saved to {interrupt_checkpoint_path}. Exiting training.")
 
 
