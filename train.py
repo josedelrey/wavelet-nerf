@@ -125,7 +125,12 @@ def main():
     print("Loading training dataset...")
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
     rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
-    N = images_np.shape[0]
+
+    # Flatten rays across all images
+    rays_o = rays_o.reshape(-1, 3)
+    rays_d = rays_d.reshape(-1, 3)
+    target_pixels = target_pixels.reshape(-1, 3)
+    total_rays = rays_o.shape[0]
 
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
@@ -156,23 +161,13 @@ def main():
     try:
         with tqdm(total=num_iters, initial=start_iter, desc="Training", unit="it") as pbar:
             for step in range(start_iter, num_iters):
-                # Randomly select an image from the dataset
-                img_idx = np.random.randint(0, N)
+                # Sample random rays
+                selected_indices = np.random.choice(total_rays, size=num_random_rays, replace=False)
 
-                # Get the rays and target pixels for the selected image
-                rays_o_image_np = rays_o[img_idx]
-                rays_d_image_np = rays_d[img_idx]
-                target_pixels_image_np = target_pixels[img_idx]
-                rays_o_image = torch.from_numpy(rays_o_image_np).float().to(device).squeeze(0)
-                rays_d_image = torch.from_numpy(rays_d_image_np).float().to(device).squeeze(0)
-                target_pixels_image = torch.from_numpy(target_pixels_image_np).float().to(device).squeeze(0)
-
-                # Randomly sample a subset of rays for this iteration
-                num_pixels = rays_o_image.shape[0]
-                sel_inds = np.random.choice(num_pixels, size=num_random_rays, replace=False)
-                rays_o_batch = rays_o_image[sel_inds]
-                rays_d_batch = rays_d_image[sel_inds]
-                target_rgb = target_pixels_image[sel_inds]
+                # Move the selected rays and target pixels to GPU
+                rays_o_batch = torch.from_numpy(rays_o[selected_indices]).float().to(device)
+                rays_d_batch = torch.from_numpy(rays_d[selected_indices]).float().to(device)
+                target_rgb = torch.from_numpy(target_pixels[selected_indices]).float().to(device)
 
                 # Use render_volume to compute the predicted color along each ray
                 pred_rgb = render_nerf(

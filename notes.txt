@@ -12,6 +12,6 @@ TODO:
     + Implement Plenoxels
 
 TODO Today:
-- Improve convergence by sampling rays from a general ray pool
+- Implement more robust dataloader
 - Implement early stopping if overfitting based in validation set
 - Research the use of FP16 for NeRF so it improves performance
