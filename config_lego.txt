@@ -39,6 +39,12 @@ lr_decay_factor = 0.1              # Factor to multiply the learning rate after 
 # --------------------
 model_type = siren
 
+# --------------------
+# Monitoring Parameters
+# --------------------
+log_interval =                     # Interval (in iterations) for logging training metrics
+val_interval =                     # Interval (in iterations) for running validation
+
 # =============================================================================
 # Evaluation Parameters
 # =============================================================================

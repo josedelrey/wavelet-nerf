@@ -3,9 +3,15 @@ Remaining NeRF implementations:
 - Details in the original NeRF implementation such as adding noise to the inputs
 
 TODO:
-- Implement GaborNet
-- Implement KiloNeRF
-- Implement FastNeRF
-- Implement PlenOctrees
-- Implement Instant NGP
-- Implement Plenoxels
+- Implement other models:
+    + Implement GaborNet
+    + Implement KiloNeRF
+    + Implement FastNeRF
+    + Implement PlenOctrees
+    + Implement Instant NGP
+    + Implement Plenoxels
+
+TODO Today:
+- Improve convergence by sampling rays from a general ray pool
+- Implement early stopping if overfitting based in validation set
+- Research the use of FP16 for NeRF so it improves performance

@@ -92,6 +92,10 @@ def main():
 
     # Model type
     model_type = config.get('model_type', 'NeRF')
+
+    # Monitoring parameters
+    log_interval = int(config.get('log_interval', 10))
+    val_interval = int(config.get('val_interval', 1000))
     
     print("===== Training Configuration Summary =====")
     print(f"Dataset path: {dataset_path}")
@@ -146,7 +150,7 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         start_iter = checkpoint['step']
-        tqdm.write(f"Resuming training from iteration {start_iter}")
+        print(f"Resuming training from iteration {start_iter}")
 
     # Training loop
     try:
@@ -194,11 +198,11 @@ def main():
                 pbar.update(1)
 
                 # Log loss and PSNR
-                if step % 10 == 0:
+                if step % log_interval == 0:
                     current_lr = scheduler.get_last_lr()[0]
                     elapsed_str = format_elapsed_time(start_time)
                     log_message = (f"[{elapsed_str}] [Iter {step:07d}] LR: {current_lr:.6f} "
-                                f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
+                                   f"MSE: {loss.item():.4f} PSNR: {mse_to_psnr(loss.item()):.2f}")
                     tqdm.write(log_message)
 
                     # Log loss and PSNR to TensorBoard
@@ -206,12 +210,6 @@ def main():
                     writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
 
                 if step % save_interval == 0 and step > 0 and step < num_iters - 1:
-                    # Delete previous checkpoints
-                    for filename in os.listdir(save_path):
-                        file_path = os.path.join(save_path, filename)
-                        if os.path.isfile(file_path) and filename.endswith('.pth'):
-                            os.remove(file_path)
-
                     # Save model checkpoint with training state
                     checkpoint_dict = {
                         'step': step,
