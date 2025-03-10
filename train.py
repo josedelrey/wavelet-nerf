@@ -1,5 +1,6 @@
 import os
 import argparse
+import time
 import datetime
 import numpy as np
 import torch
@@ -150,10 +151,15 @@ def main():
     else:
         raise ValueError(f"Invalid model type: {model_type}")
 
-    # Load the full training dataset
+    # Load the training dataset
     print("Loading training dataset...")
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
     rays_o, rays_d, target_pixels = compute_rays(images_np, c2w_matrices_np, focal_length)
+
+    # Load the validation dataset
+    print("Loading validation dataset...")
+    images_val_np, c2w_val_np, focal_length_val = load_dataset(dataset_path, mode='val')
+    val_len, H_val, W_val, _ = images_np.shape
 
     # Create the dataset and DataLoader
     dataset = RayDataset(rays_o, rays_d, target_pixels)
@@ -226,6 +232,79 @@ def main():
                 # Log metrics and write to TensorBoard at the specified interval
                 if step % log_interval == 0:
                     log_training_metrics(step, scheduler, loss, start_time, writer)
+
+                # Log validation metrics at the specified interval
+                if step % val_interval == 0 and step > 0:
+                    # 1. Pick a random validation image index
+                    val_idx = np.random.randint(0, val_len)
+
+                    # 2. Grab the validation image and pose
+                    single_val_img = images_val_np[val_idx:val_idx+1]  # shape (1, H, W, 3)
+                    single_val_c2w = c2w_val_np[val_idx:val_idx+1]     # shape (1, 4, 4)
+
+                    # 3. Compute rays for this image
+                    rays_o_val, rays_d_val, _ = compute_rays(
+                        single_val_img,
+                        single_val_c2w,
+                        focal_length_val
+                    )
+                    
+                    # Convert to torch (remove the first dimension if shape is (1, H, W, 3))
+                    rays_o_val = torch.from_numpy(rays_o_val).float().to(device).squeeze(0)
+                    rays_d_val = torch.from_numpy(rays_d_val).float().to(device).squeeze(0)
+
+                    # 4. Render
+                    model.eval()
+                    start_time = time.perf_counter()
+                    with torch.no_grad():
+                        pred_val_rgb = render_nerf(
+                            model,
+                            rays_o_val,
+                            rays_d_val,
+                            near,
+                            far,
+                            num_samples=num_samples,
+                            device=device,
+                            white_background=True,
+                            chunk_size=chunk_size
+                        )
+                    model.train()
+                    end_time = time.perf_counter()
+                    inference_time = end_time - start_time
+                    tqdm.write(f"Inference took {inference_time:.2f} seconds.")
+
+                    # 5. Reshape to image
+                    H_v, W_v = single_val_img.shape[1:3]
+                    pred_val_rgb = pred_val_rgb.reshape(H_v, W_v, 3).cpu().numpy()
+
+                    # 6. Compute PSNR vs. GT
+                    gt_val_img = single_val_img[0]  # shape (H, W, 3)
+                    val_mse = np.mean((pred_val_rgb - gt_val_img) ** 2)
+                    val_psnr = mse_to_psnr(val_mse)
+
+                    # 7. Log to TensorBoard
+                    writer.add_scalar("val/psnr", val_psnr, step)
+
+                    # Option A: Log the rendered image as a TensorBoard image
+                    # TensorBoard's add_image expects (C, H, W), so transpose if needed:
+                    # Clip to [0,1] if your model doesn't already clamp
+                    pred_val_rgb_clamped = np.clip(pred_val_rgb, 0.0, 1.0)
+                    writer.add_image(
+                        "val/render",
+                        torch.from_numpy(pred_val_rgb_clamped).permute(2,0,1),
+                        step
+                    )
+
+                    # Option B: Log using add_figure (if you prefer a matplotlib figure)
+                    # import matplotlib.pyplot as plt
+                    # fig, ax = plt.subplots()
+                    # ax.imshow(pred_val_rgb_clamped)
+                    # ax.set_title(f'Validation (PSNR={val_psnr:.2f})')
+                    # ax.axis('off')
+                    # writer.add_figure("val/render_figure", fig, step)
+                    # plt.close(fig)
+
+                    tqdm.write(f"[Validation Step] Iter {step}  PSNR: {val_psnr:.2f}")
 
                 # Save checkpoints at intervals
                 if step % save_interval == 0 and step > 0 and step < num_iters - 1:

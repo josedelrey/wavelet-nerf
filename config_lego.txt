@@ -43,9 +43,9 @@ model_type = siren
 # Monitoring Parameters
 # --------------------
 log_interval = 10                      # Interval (in iterations) for logging training metrics
-val_interval = 1000                    # Interval (in iterations) for running validation
+val_interval = 1                  # Interval (in iterations) for running validation
 
 # =============================================================================
 # Evaluation Parameters
 # =============================================================================
-checkpoint_path = ./models/nerf_model_final.pth   # Path to checkpoint for evaluation
+checkpoint_path = models\siren\siren_model_interrupt_0135324.pth   # Path to checkpoint for evaluation
