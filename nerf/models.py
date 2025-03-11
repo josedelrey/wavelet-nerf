@@ -12,9 +12,9 @@ class NeRFModel(nn.Module):
     def __init__(self, pos_encoding_dim: int = 10, dir_encoding_dim: int = 4, hidden_dim: int = 256) -> None:
         super(NeRFModel, self).__init__()
 
-        # First MLP block: processes positional encoded 3D points
+        # First MLP block
         self.block1 = nn.Sequential(
-            nn.Linear(pos_encoding_dim * 6 + 3, hidden_dim),  # 3D point input + 3 sine/cosine pairs per frequency
+            nn.Linear(pos_encoding_dim * 6 + 3, hidden_dim),  # 3D point + 3 sin/cos pairs per freq
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -26,9 +26,9 @@ class NeRFModel(nn.Module):
             nn.ReLU()
         )
 
-        # Second MLP block: refines features and predicts density
+        # Second MLP block
         self.block2 = nn.Sequential(
-            nn.Linear(hidden_dim + pos_encoding_dim * 6 + 3, hidden_dim),  # Skip connection with original point
+            nn.Linear(hidden_dim + pos_encoding_dim * 6 + 3, hidden_dim),  # Skip conn with original point
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -39,12 +39,12 @@ class NeRFModel(nn.Module):
             nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
         )
 
-        # RGB head: predicts view-dependent color from features and encoded ray direction
+        # RGB head
         self.rgb_head = nn.Sequential(
-            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2),  # Concatenate with ray direction
+            nn.Linear(hidden_dim + dir_encoding_dim * 6 + 3, hidden_dim // 2),  # Concat with ray direction
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid()  # Map output to [0, 1]
+            nn.Sigmoid()
         )
 
         self.pos_encoding_dim = pos_encoding_dim
@@ -85,7 +85,7 @@ class SirenNeRFModel(nn.Module):
     def __init__(self, w0: float = 30, hidden_w0: float = 1, hidden_dim: int = 256):
         super(SirenNeRFModel, self).__init__()
         
-        # First MLP block: processes raw 3D point coordinates
+        # First MLP block
         self.block1 = nn.Sequential(
             nn.Linear(3, hidden_dim),  # 3D point input
             SineLayer(w0),
@@ -99,9 +99,9 @@ class SirenNeRFModel(nn.Module):
             SineLayer(hidden_w0)
         )
 
-        # Second MLP block: refines features and predicts density
+        # Second MLP block
         self.block2 = nn.Sequential(
-            nn.Linear(hidden_dim + 3, hidden_dim),  # Skip connection with original point
+            nn.Linear(hidden_dim + 3, hidden_dim),  # Skip conn with original point
             SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
             SineLayer(hidden_w0),
@@ -112,22 +112,20 @@ class SirenNeRFModel(nn.Module):
             nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
         )
 
-        # RGB head: predicts view-dependent color from features and ray direction
+        # RGB head
         self.rgb_head = nn.Sequential(
-            nn.Linear(hidden_dim + 3, hidden_dim // 2),  # Concatenate with ray direction
+            nn.Linear(hidden_dim + 3, hidden_dim // 2),  # Concat with ray direction
             SineLayer(hidden_w0),
             nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid()  # Map output to [0, 1]
+            nn.Sigmoid()
         )
 
         # Weight initialization for SIREN layers
-        # First layer: U(-1/in_features, 1/in_features)
-        # Subsequent layers: U(-sqrt(6/in_features)/hidden_w0, sqrt(6/in_features)/hidden_w0)
         with torch.no_grad():
             # Initialize block1 linear layers
             for i, module in enumerate(self.block1):
                 if isinstance(module, nn.Linear):
-                    if i == 0:  # first layer of block1
+                    if i == 0:
                         bound = 1 / module.in_features
                     else:
                         bound = np.sqrt(6 / module.in_features) / hidden_w0

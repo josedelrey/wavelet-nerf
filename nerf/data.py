@@ -1,10 +1,10 @@
 import os
 import json
-import torch
 import numpy as np
 import imageio.v2 as imageio
-from typing import Tuple
+import torch
 from torch.utils.data import Dataset
+from typing import Tuple
 
 
 def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, float]:
@@ -110,8 +110,19 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
 
 
 class RayDataset(Dataset):
+    """
+    A PyTorch dataset for storing and accessing ray data.
+
+    This dataset class converts ray origins, ray directions, and target pixel colors from 
+    NumPy arrays to torch tensors. It flattens the input arrays to produce a dataset 
+    where each sample corresponds to a single ray along with its associated color.
+
+    Args:
+        rays_o (np.ndarray): Array of ray origins with shape (N, H*W, 3).
+        rays_d (np.ndarray): Array of ray directions with shape (N, H*W, 3).
+        target_pixels (np.ndarray): Array of target RGB pixel colors with shape (N, H*W, 3).
+    """
     def __init__(self, rays_o, rays_d, target_pixels):
-        # Flatten arrays from shape (N, H*W, 3) to (total_rays, 3)
         self.rays_o = torch.from_numpy(rays_o.reshape(-1, 3)).float()
         self.rays_d = torch.from_numpy(rays_d.reshape(-1, 3)).float()
         self.target_pixels = torch.from_numpy(target_pixels.reshape(-1, 3)).float()

@@ -1,15 +1,14 @@
 import os
 import argparse
-import time
 import datetime
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from tqdm import tqdm
 from torch.optim.lr_scheduler import ExponentialLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 from nerf.data import load_dataset, compute_rays, RayDataset
 from nerf.models import NeRFModel, SirenNeRFModel
@@ -63,6 +62,7 @@ def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, pr
     """
     checkpoint_dict = {
         'step': step,
+        'model_type': model_type,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict()
@@ -121,7 +121,12 @@ def main():
     lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
 
     # Model type
-    model_type = config.get('model_type', 'NeRF').lower()
+    if args.resume is not None:
+        checkpoint_temp = torch.load(args.resume, map_location='cpu')
+        model_type = checkpoint_temp.get('model_type', config.get('model_type', 'NeRF')).lower()
+        print(f"Resuming training with model type from checkpoint: {model_type}")
+    else:
+        model_type = config.get('model_type', 'NeRF').lower()
 
     # Monitoring parameters
     log_interval = int(config.get('log_interval', 10))
@@ -140,6 +145,8 @@ def main():
     print(f"Save interval: {save_interval}")
     print(f"LR decay: {lr_decay}")
     print(f"LR decay factor: {lr_decay_factor}")
+    print(f"Log interval: {log_interval}")
+    print(f"Validation interval: {val_interval}")
     print(f"Model type: {model_type}")
     print("==========================================")
 
@@ -294,15 +301,8 @@ def main():
 
                 pbar.update(1)
 
-            # Save final model after training is complete
-            final_model_path = os.path.join(save_path, f"{model_type}_model_final.pth")
-            final_checkpoint_dict = {
-                'step': num_iters,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict()
-            }
-            torch.save(final_checkpoint_dict, final_model_path)
+            # Save final model after training is complete using save_checkpoint
+            final_model_path = save_checkpoint(num_iters, model, optimizer, scheduler, save_path, model_type, prefix="final_")
             elapsed_str = format_elapsed_time(start_time)
             tqdm.write(f"[{elapsed_str}] Training complete!")
             tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")

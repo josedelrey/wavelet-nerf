@@ -154,10 +154,8 @@ def composite_volume(
     # weights_i = T_i * alpha_i
     weights = compute_accumulated_transmittance(1 - alpha) * alpha
 
-    # Final composite color
     comp_rgb = (weights.unsqueeze(-1) * colors).sum(dim=1)
 
-    # If we assume a white background, add the remainder
     if white_background:
         comp_rgb = comp_rgb + (1 - weights.sum(dim=1, keepdim=True))
 
@@ -174,29 +172,33 @@ def render_nerf(
     device: str = 'cpu',
     white_background: bool = True,
     chunk_size: int = 8192,
-    show_progress: bool = False,
 ) -> Tensor:
     """
-    Render rays via volumetric rendering using a NeRF model.
-    
-    ... [docstring truncated for brevity]
+    Render rays with a NeRF model via volumetric integration.
+
+    This function samples points along each ray between the specified near and far
+    bounds, queries the NeRF model to obtain color and density predictions, and
+    composites these predictions into a final RGB color per ray using volumetric rendering.
+
+    Parameters:
+        model (torch.nn.Module): The NeRF model that outputs colors and densities.
+        rays_o (Tensor): Ray origins of shape [num_rays, 3].
+        rays_d (Tensor): Ray directions of shape [num_rays, 3].
+        near (float): Near bound for sampling along the rays.
+        far (float): Far bound for sampling along the rays.
+        num_samples (int, optional): Number of sample points per ray.
+        device (str, optional): Device on which to perform rendering.
+        white_background (bool, optional): If True, composite over a white background.
+        chunk_size (int, optional): Number of rays processed per chunk for memory efficiency.
+
+    Returns:
+        Tensor: A tensor of shape [num_rays, 3] containing the rendered RGB colors.
     """
-    # Ensure data is on the specified device
     rays_o = rays_o.to(device)
     rays_d = rays_d.to(device)
 
     rgb_out = []
-    
-    # Choose the iterator: wrap with tqdm if progress is enabled
-    if show_progress:
-        iterator = tqdm(range(0, rays_o.shape[0], chunk_size),
-                        desc="Rendering",
-                        position=1,
-                        leave=True)
-    else:
-        iterator = range(0, rays_o.shape[0], chunk_size)
-        
-    for i in iterator:
+    for i in range(0, rays_o.shape[0], chunk_size):
         rays_o_chunk = rays_o[i:i + chunk_size]
         rays_d_chunk = rays_d[i:i + chunk_size]
 
@@ -236,5 +238,4 @@ def render_nerf(
         composed_rgb = composite_volume(colors, densities, deltas, white_background)
         rgb_out.append(composed_rgb)
 
-    # Concatenate results for all chunks
     return torch.cat(rgb_out, dim=0)

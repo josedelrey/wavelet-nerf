@@ -37,15 +37,10 @@ lr_decay_factor = 0.1              # Factor to multiply the learning rate after 
 # --------------------
 # Model Type
 # --------------------
-model_type = nerf
+model_type = siren
 
 # --------------------
 # Monitoring Parameters
 # --------------------
 log_interval = 10                      # Interval (in iterations) for logging training metrics
-val_interval = 1000                      # Interval (in iterations) for running validation
-
-# =============================================================================
-# Evaluation Parameters
-# =============================================================================
-checkpoint_path = models/nerf/nerf_model_final.pth   # Path to checkpoint for evaluation
+val_interval = 5000                      # Interval (in iterations) for running validation
