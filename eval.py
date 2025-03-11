@@ -58,7 +58,19 @@ def main():
     test_image_index = int(config.get('test_image_index', 0))
     
     # Allow model type selection (default to NeRF)
-    model_type = config.get('model_type', 'NeRF').lower()
+    model_type = config.get('model_type', 'nerf').lower()
+
+    print("===== Evaluation Configuration Summary =====")
+    print(f"Dataset path: {dataset_path}")
+    print(f"Checkpoint path: {checkpoint_path}")
+    print(f"Near: {near}")
+    print(f"Far: {far}")
+    print(f"Num samples: {num_samples}")
+    print(f"Chunk size: {chunk_size}")
+    print(f"White background: {white_background}")
+    print(f"Test image index: {test_image_index}")
+    print(f"Model type: {model_type}")
+    print("=============================================")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {torch.cuda.get_device_name(0) if device == 'cuda' else 'CPU'}")
@@ -104,7 +116,8 @@ def main():
             num_samples=num_samples,
             device=device,
             white_background=white_background,
-            chunk_size=chunk_size
+            chunk_size=chunk_size,
+            show_progress=True
         )
     end_time = time.perf_counter()
     inference_time = end_time - start_time

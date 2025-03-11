@@ -1,5 +1,6 @@
 import torch
 from torch import Tensor
+from tqdm import tqdm
 from typing import Tuple
 
 
@@ -172,34 +173,30 @@ def render_nerf(
     num_samples: int = 256,
     device: str = 'cpu',
     white_background: bool = True,
-    chunk_size: int = 8192
+    chunk_size: int = 8192,
+    show_progress: bool = False,
 ) -> Tensor:
     """
     Render rays via volumetric rendering using a NeRF model.
-
-    Args:
-        model (torch.nn.Module): NeRF model.
-        rays_o (Tensor): Ray origins.
-        rays_d (Tensor): Ray directions.
-        near (float): Near bound.
-        far (float): Far bound.
-        num_samples (int, optional): Number of samples per ray.
-        device (str, optional): Computation device.
-        white_background (bool, optional): Use a white background.
-        chunk_size (int, optional): Number of rays to process per chunk.
-
-    Returns:
-        Tensor: Rendered RGB colors for each ray.
+    
+    ... [docstring truncated for brevity]
     """
     # Ensure data is on the specified device
     rays_o = rays_o.to(device)
     rays_d = rays_d.to(device)
 
-    # Storage for all chunked results
     rgb_out = []
-
-    for i in range(0, rays_o.shape[0], chunk_size):
-        # Chunk the rays to avoid OOM for large batches
+    
+    # Choose the iterator: wrap with tqdm if progress is enabled
+    if show_progress:
+        iterator = tqdm(range(0, rays_o.shape[0], chunk_size),
+                        desc="Rendering",
+                        position=1,
+                        leave=True)
+    else:
+        iterator = range(0, rays_o.shape[0], chunk_size)
+        
+    for i in iterator:
         rays_o_chunk = rays_o[i:i + chunk_size]
         rays_d_chunk = rays_d[i:i + chunk_size]
 

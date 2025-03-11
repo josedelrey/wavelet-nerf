@@ -25,7 +25,7 @@ far = 6.0                          # Far bound for ray sampling
 # --------------------
 # Model Saving Parameters
 # --------------------
-save_path = ./models/siren         # Directory to save trained models
+save_path = ./models/nerf         # Directory to save trained models
 save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
 # --------------------
@@ -37,15 +37,15 @@ lr_decay_factor = 0.1              # Factor to multiply the learning rate after 
 # --------------------
 # Model Type
 # --------------------
-model_type = siren
+model_type = nerf
 
 # --------------------
 # Monitoring Parameters
 # --------------------
 log_interval = 10                      # Interval (in iterations) for logging training metrics
-val_interval = 1                  # Interval (in iterations) for running validation
+val_interval = 1000                      # Interval (in iterations) for running validation
 
 # =============================================================================
 # Evaluation Parameters
 # =============================================================================
-checkpoint_path = models\siren\siren_model_interrupt_0135324.pth   # Path to checkpoint for evaluation
+checkpoint_path = models/nerf/nerf_model_final.pth   # Path to checkpoint for evaluation

@@ -3,7 +3,7 @@ Remaining NeRF implementations:
 - Details in the original NeRF implementation such as adding noise to the inputs
 
 TODO:
-- Implement early stopping if overfitting based in validation set
+- Improve resuming function by storing model type in checkpoint
 - Refactor all code after latest implementations (it's dirty rn)
 - Fix banding artifacts when rendering
 - Implement other models:
