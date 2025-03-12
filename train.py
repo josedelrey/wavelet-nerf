@@ -87,6 +87,10 @@ def log_training_metrics(step, scheduler, loss, start_time, writer):
 
 
 def main():
+    # Set random seed for reproducibility
+    torch.manual_seed(42)
+    np.random.seed(42)
+
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Train NeRF on a given dataset using volumetric rendering."
@@ -254,6 +258,8 @@ def main():
                     rays_o_val_np, rays_d_val_np, _ = compute_rays(single_val_image, single_val_c2w, focal_length_val)
                     rays_o_val = torch.from_numpy(rays_o_val_np).float().to(device).squeeze(0)
                     rays_d_val = torch.from_numpy(rays_d_val_np).float().to(device).squeeze(0)
+
+                    tqdm.write("Rendering validation image...")
                     
                     model.eval()
                     torch.cuda.empty_cache()
