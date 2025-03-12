@@ -190,7 +190,7 @@ def main():
     writer = SummaryWriter(log_dir=log_dir)
     writer.add_text('config', str(config))
 
-    # Resume training from a checkpoint
+    # Resume training from checkpoint
     start_iter = 0
     start_time = datetime.datetime.now()
     if args.resume is not None:
@@ -239,7 +239,7 @@ def main():
                 if step % log_interval == 0:
                     log_training_metrics(step, scheduler, loss, start_time, writer)
 
-                # Save checkpoints at intervals
+                # Save checkpoint
                 if step % save_interval == 0 and step > 0 and step < num_iters - 1:
                     model_filename = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
                     elapsed_str = format_elapsed_time(start_time)
@@ -276,7 +276,7 @@ def main():
                     pred_val_rgb = pred_val_rgb.reshape(H_v, W_v, 3).cpu().numpy()
                     tqdm.write(f"Validation Debug: Rendered image shape: {pred_val_rgb.shape}")
                     
-                    # Compute PSNR vs. GT
+                    # Compute validation PSNR
                     gt_val_img = single_val_image[0]
                     val_mse = np.mean((pred_val_rgb - gt_val_img) ** 2)
                     val_psnr = mse_to_psnr(val_mse)
@@ -296,7 +296,7 @@ def main():
 
                 pbar.update(1)
 
-            # Save final model after training is complete using save_checkpoint
+            # Save final model after training is complete
             final_model_path = save_checkpoint(num_iters, model, optimizer, scheduler, save_path, model_type, prefix="final_")
             elapsed_str = format_elapsed_time(start_time)
             tqdm.write(f"[{elapsed_str}] Training complete!")
