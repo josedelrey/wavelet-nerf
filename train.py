@@ -26,6 +26,7 @@ def parse_config(config_path: str) -> dict:
     with open(config_path, 'r') as f:
         for line in f:
             line = line.strip()
+
             if not line or line.startswith('#'):
                 continue
 
@@ -168,7 +169,7 @@ def main():
     print("Loading validation dataset...")
     images_val_np, c2w_val_np, focal_length_val = load_dataset(dataset_path, mode='test')
     N_val, H_val, W_val, _ = images_np.shape
-    print(f"Loaded {N_val} test images of resolution {H_val}x{W_val}.")
+    print(f"Loaded {N_val} validation images of resolution {H_val}x{W_val}.")
 
     # Create the dataset and DataLoader
     dataset = RayDataset(rays_o, rays_d, target_pixels)
@@ -205,7 +206,6 @@ def main():
         with tqdm(total=num_iters, initial=start_iter, desc="Training", unit="it") as pbar:
             for step in range(start_iter, num_iters):
                 try:
-                    # Get the next batch from the DataLoader
                     rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
                 except StopIteration:
                     # Reinitialize iterator if the DataLoader is exhausted
@@ -216,7 +216,6 @@ def main():
                 rays_d_batch = rays_d_batch.to(device)
                 target_rgb_batch = target_rgb_batch.to(device)
                 
-                # Render using your model
                 pred_rgb = render_nerf(
                     model,
                     rays_o_batch,
@@ -236,7 +235,7 @@ def main():
                 optimizer.step()
                 scheduler.step()
 
-                # Log metrics and write to TensorBoard at the specified interval
+                # Log metrics and write to TensorBoard
                 if step % log_interval == 0:
                     log_training_metrics(step, scheduler, loss, start_time, writer)
 
@@ -246,17 +245,16 @@ def main():
                     elapsed_str = format_elapsed_time(start_time)
                     tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
-                # Log validation metrics at the specified interval
+                # Log validation metrics
                 if step % val_interval == 0:
-                    # Select the test image using the specified index and compute rays
-                    test_image_index = 0
+                    # Select a random image and render it
+                    test_image_index = np.random.randint(N_val)
                     single_val_image = images_val_np[test_image_index:test_image_index+1]
                     single_val_c2w = c2w_val_np[test_image_index:test_image_index+1]
                     rays_o_val_np, rays_d_val_np, _ = compute_rays(single_val_image, single_val_c2w, focal_length_val)
                     rays_o_val = torch.from_numpy(rays_o_val_np).float().to(device).squeeze(0)
                     rays_d_val = torch.from_numpy(rays_d_val_np).float().to(device).squeeze(0)
                     
-                    # 4. Render
                     model.eval()
                     torch.cuda.empty_cache()
                     with torch.no_grad():
@@ -273,18 +271,16 @@ def main():
                         )
                     model.train()
                     
-                    # 5. Reshape to image
+                    # Reshape to image
                     H_v, W_v = single_val_image.shape[1:3]
                     pred_val_rgb = pred_val_rgb.reshape(H_v, W_v, 3).cpu().numpy()
                     tqdm.write(f"Validation Debug: Rendered image shape: {pred_val_rgb.shape}")
                     
-                    # 6. Compute PSNR vs. GT
-                    gt_val_img = single_val_image[0]  # shape (H, W, 3)
+                    # Compute PSNR vs. GT
+                    gt_val_img = single_val_image[0]
                     val_mse = np.mean((pred_val_rgb - gt_val_img) ** 2)
                     val_psnr = mse_to_psnr(val_mse)
                     tqdm.write(f"Validation Debug: MSE = {val_mse:.4f}, PSNR = {val_psnr:.2f}")
-                    
-                    # 7. Log to TensorBoard
                     writer.add_scalar("val/psnr", val_psnr, step)
                     
                     # Log the rendered image as a TensorBoard image
