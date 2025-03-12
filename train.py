@@ -240,6 +240,12 @@ def main():
                 if step % log_interval == 0:
                     log_training_metrics(step, scheduler, loss, start_time, writer)
 
+                # Save checkpoints at intervals
+                if step % save_interval == 0 and step > 0 and step < num_iters - 1:
+                    model_filename = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
+                    elapsed_str = format_elapsed_time(start_time)
+                    tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
+
                 # Log validation metrics at the specified interval
                 if step % val_interval == 0:
                     # Select the test image using the specified index and compute rays
@@ -263,8 +269,7 @@ def main():
                             num_samples=num_samples,
                             device=device,
                             white_background=True,
-                            chunk_size=chunk_size,
-                            show_progress=True
+                            chunk_size=chunk_size
                         )
                     model.train()
                     
@@ -292,12 +297,6 @@ def main():
                     
                     tqdm.write(f"Validation Debug: Logging complete for iteration {step}.")
                     tqdm.write(f"[Validation Step] Iter {step}  PSNR: {val_psnr:.2f}")
-
-                # Save checkpoints at intervals
-                if step % save_interval == 0 and step > 0 and step < num_iters - 1:
-                    model_filename = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
-                    elapsed_str = format_elapsed_time(start_time)
-                    tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
                 pbar.update(1)
 

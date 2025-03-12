@@ -8,6 +8,11 @@ from nerf.encoding import positional_encoding
 class NeRFModel(nn.Module):
     """
     Standard NeRF model using ReLU activations and positional encoding.
+    
+    Args:
+        pos_encoding_dim (int): Number of frequencies for positional encoding of 3D points.
+        dir_encoding_dim (int): Number of frequencies for positional encoding of ray directions.
+        hidden_dim (int): Number of neurons in the hidden layers.
     """
     def __init__(self, pos_encoding_dim: int = 10, dir_encoding_dim: int = 4, hidden_dim: int = 256) -> None:
         super(NeRFModel, self).__init__()
@@ -53,6 +58,15 @@ class NeRFModel(nn.Module):
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass: encode inputs, compute features, and output RGB color and density.
+
+        Args:
+            points (torch.Tensor): Tensor representing input 3D points.
+            rays_d (torch.Tensor): Tensor representing input ray directions.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]:
+                - colors: Tensor with normalized RGB values.
+                - density: Tensor representing the density values.
         """
         points_enc = positional_encoding(points, self.pos_encoding_dim)
         rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
@@ -68,6 +82,9 @@ class NeRFModel(nn.Module):
 class SineLayer(nn.Module):
     """
     Sine activation layer with a scaling factor.
+
+    Args:
+        w0 (float): Scaling factor applied to the input before the sine activation.
     """
     def __init__(self, w0: float):
         super(SineLayer, self).__init__()
@@ -81,6 +98,11 @@ class SirenNeRFModel(nn.Module):
     """
     NeRF variant using SIREN activations.
     Processes raw 3D points and ray directions with sine-based MLPs.
+
+    Args:
+        w0 (float): Initial scaling factor for the first SIREN activation.
+        hidden_w0 (float): Scaling factor for subsequent SIREN activations.
+        hidden_dim (int): Number of neurons in the hidden layers.
     """
     def __init__(self, w0: float = 30, hidden_w0: float = 1, hidden_dim: int = 256):
         super(SirenNeRFModel, self).__init__()
@@ -147,6 +169,15 @@ class SirenNeRFModel(nn.Module):
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass: encode 3D points, compute features, and output RGB color and density.
+
+        Args:
+            points (torch.Tensor): Tensor representing raw 3D points.
+            rays_d (torch.Tensor): Tensor representing raw ray directions.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]:
+                - colors: Tensor with normalized RGB values.
+                - density: Tensor representing the density values.
         """
         features = self.block1(points)
         features = self.block2(torch.cat((features, points), dim=1))
