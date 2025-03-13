@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from nerf.data import load_dataset, compute_rays, RayDataset
-from nerf.models import NeRFModel, SirenNeRFModel
+from nerf.models import NeRF, Siren
 from nerf.rendering import render_nerf
 from nerf.loss import mse_to_psnr
 
@@ -57,7 +57,7 @@ def format_elapsed_time(start_time: datetime.datetime) -> str:
     )
 
 
-def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, prefix=""):
+def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type):
     """
     Save the training checkpoint.
     """
@@ -68,7 +68,7 @@ def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, pr
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict()
     }
-    model_filename = os.path.join(save_path, f"{model_type}_model_{prefix}{step:07d}.pth")
+    model_filename = os.path.join(save_path, f"{model_type}_model_{step:06d}.pth")
     torch.save(checkpoint_dict, model_filename)
     return model_filename
 
@@ -158,9 +158,9 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {torch.cuda.get_device_name(0) if device == 'cuda' else 'CPU'}")
     if model_type == 'nerf':
-        model = NeRFModel().to(device)
+        model = NeRF().to(device)
     elif model_type == 'siren':
-        model = SirenNeRFModel().to(device)
+        model = Siren().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
 
@@ -303,7 +303,7 @@ def main():
                 pbar.update(1)
 
             # Save final model after training is complete
-            final_model_path = save_checkpoint(num_iters, model, optimizer, scheduler, save_path, model_type, prefix="final_")
+            final_model_path = save_checkpoint(num_iters, model, optimizer, scheduler, save_path, model_type)
             elapsed_str = format_elapsed_time(start_time)
             tqdm.write(f"[{elapsed_str}] Training complete!")
             tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
@@ -312,7 +312,7 @@ def main():
         # Save checkpoint on keyboard interrupt
         elapsed_str = format_elapsed_time(start_time)
         tqdm.write(f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint...")
-        interrupt_checkpoint_path = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, prefix="interrupt_")
+        interrupt_checkpoint_path = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
         tqdm.write(f"[{elapsed_str}] Checkpoint saved to {interrupt_checkpoint_path}. Exiting training.")
 
 

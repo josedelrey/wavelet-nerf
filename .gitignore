@@ -1,0 +1,12 @@
+# Ignore the logs directory
+logs/
+
+# Ignore the datasets directory
+datasets/
+
+# Ignore the models directory
+models/
+
+# Ignore note files
+output_command.txt
+output_file.txt

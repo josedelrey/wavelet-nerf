@@ -3,9 +3,6 @@ Remaining NeRF implementations:
 - Details in the original NeRF implementation such as adding noise to the inputs
 
 TODO:
-- Improve resuming function by storing model type in checkpoint
-- Refactor all code after latest implementations (it's dirty rn)
-- Fix banding artifacts when rendering
 - Implement other models:
     + Implement GaborNet
     + Implement KiloNeRF

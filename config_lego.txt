@@ -17,7 +17,7 @@ num_samples = 256                  # Number of samples along each ray
 # --------------------
 # Training Parameters
 # --------------------
-num_iters = 150000                 # Total number of training iterations
+num_iters = 300000                 # Total number of training iterations
 learning_rate = 5e-4               # Learning rate for the optimizer
 near = 2.0                         # Near bound for ray sampling
 far = 6.0                          # Far bound for ray sampling
@@ -25,22 +25,22 @@ far = 6.0                          # Far bound for ray sampling
 # --------------------
 # Model Saving Parameters
 # --------------------
-save_path = ./models/nerf         # Directory to save trained models
+save_path = ./models/siren         # Directory to save trained models
 save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
 # --------------------
 # Learning Rate Decay Parameters
 # --------------------
-lr_decay = 150                     # Number of 1000-step intervals for decay
+lr_decay = 300                     # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate after each decay interval
+
+# --------------------
+# Monitoring Parameters
+# --------------------
+log_interval = 50                  # Interval (in iterations) for logging training metrics
+val_interval = 5000                # Interval (in iterations) for running validation
 
 # --------------------
 # Model Type
 # --------------------
 model_type = siren
-
-# --------------------
-# Monitoring Parameters
-# --------------------
-log_interval = 10                      # Interval (in iterations) for logging training metrics
-val_interval = 5000                      # Interval (in iterations) for running validation
