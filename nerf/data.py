@@ -96,8 +96,6 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
 
     # Vectorized application of camera-space directions transformation
     rays_d = np.einsum('nij,hwj->nhwi', R, directions_cam)
-    
-    # Normalize ray directions
     rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
 
     # Replicate camera origin for each ray

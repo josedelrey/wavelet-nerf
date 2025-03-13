@@ -56,11 +56,9 @@ def generate_sample_positions(
     strat_samples = stratified_sampling(near, far, num_samples, device)
     deltas = strat_samples[1:] - strat_samples[:-1]
 
-    # Append a large interval for the last sample
     delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)
     deltas = torch.cat([deltas, delta_inf], dim=0)
 
-    # Expand each ray to get sample positions
     sample_positions = (
         rays_o_batch.unsqueeze(1)
         + strat_samples.unsqueeze(0).unsqueeze(-1) * rays_d_batch.unsqueeze(1)
@@ -125,7 +123,6 @@ def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
         Tensor: Accumulated transmittance along each ray.
     """
     accum_trans = torch.cumprod(betas, dim=1)
-    # Prepend a 1 so the transmittance for the first sample is 1
     init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)
     return torch.cat((init, accum_trans[:, :-1]), dim=1)
 
@@ -202,7 +199,6 @@ def render_nerf(
         rays_o_chunk = rays_o[i:i + chunk_size]
         rays_d_chunk = rays_d[i:i + chunk_size]
 
-        # Sample positions along each ray
         sample_positions, deltas = generate_sample_positions(
             rays_o_chunk,
             rays_d_chunk,
@@ -212,7 +208,6 @@ def render_nerf(
             device
         )
 
-        # Flatten for batching into the network
         sample_positions_flat = sample_positions.reshape(-1, 3)
         directions_flat = (
             rays_d_chunk
@@ -221,7 +216,6 @@ def render_nerf(
             .reshape(-1, 3)
         )
 
-        # Query the model for colors & densities
         colors_flat, densities_flat = query_model(
             model,
             sample_positions_flat,
@@ -230,11 +224,9 @@ def render_nerf(
             far
         )
         
-        # Reshape back to [batch, num_samples, ...]
         colors = colors_flat.reshape(rays_o_chunk.shape[0], num_samples, 3)
         densities = densities_flat.reshape(rays_o_chunk.shape[0], num_samples)
 
-        # Composite final color per ray
         composed_rgb = composite_volume(colors, densities, deltas, white_background)
         rgb_out.append(composed_rgb)
 
