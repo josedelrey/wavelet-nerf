@@ -278,8 +278,8 @@ def main():
                     model.train()
                     
                     # Reshape to image
-                    H_v, W_v = single_val_image.shape[1:3]
-                    pred_val_rgb = pred_val_rgb.reshape(H_v, W_v, 3).cpu().numpy()
+                    H_val, W_val = single_val_image.shape[1:3]
+                    pred_val_rgb = pred_val_rgb.reshape(H_val, W_val, 3).cpu().numpy()
                     tqdm.write(f"Validation Debug: Rendered image shape: {pred_val_rgb.shape}")
                     
                     # Compute validation PSNR
