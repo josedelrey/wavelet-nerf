@@ -17,9 +17,9 @@ class NeRF(nn.Module):
     def __init__(self, pos_encoding_dim: int = 10, dir_encoding_dim: int = 4, hidden_dim: int = 256) -> None:
         super(NeRF, self).__init__()
 
-        # First MLP block
+        # First MLP block (input: 3D point + sin/cos pairs per frequency)
         self.block1 = nn.Sequential(
-            nn.Linear(pos_encoding_dim * 6 + 3, hidden_dim),  # 3D point + sin/cos pairs per frequency
+            nn.Linear(pos_encoding_dim * 6 + 3, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -41,7 +41,7 @@ class NeRF(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim + 1)  # Last neuron outputs density
+            nn.Linear(hidden_dim, hidden_dim + 1)  # Density output
         )
 
         # RGB head combining features with ray direction
@@ -71,99 +71,112 @@ class NeRF(nn.Module):
 
 class SineLayer(nn.Module):
     """
-    Linear layer with sine activation.
-    
-    Args:
-        in_features (int): Number of input features.
-        out_features (int): Number of output features.
-        bias (bool): If True, uses bias.
-        is_first (bool): If True, this is the first layer.
-        omega_0 (float): Frequency scaling factor.
-    """
-    def __init__(self, in_features, out_features, bias=True,
-                 is_first=False, omega_0=30):
-        super().__init__()
-        self.omega_0 = omega_0
-        self.is_first = is_first
-        self.in_features = in_features
-        self.linear = nn.Linear(in_features, out_features, bias=bias)
-        self.init_weights()
+    Sine activation layer with a scaling factor.
 
-    def init_weights(self) -> None:
-        """
-        SIREN-specific weight initialization.
-        """
-        with torch.no_grad():
-            if self.is_first:
-                self.linear.weight.uniform_(-1 / self.in_features, 1 / self.in_features)
-            else:
-                self.linear.weight.uniform_(
-                    -np.sqrt(6 / self.in_features) / self.omega_0,
-                    np.sqrt(6 / self.in_features) / self.omega_0
-                )
-    
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        """
-        Applies the linear transformation and sine activation.
-        """
-        return torch.sin(self.omega_0 * self.linear(input))
-    
-    def forward_with_intermediate(self, input: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Returns the sine-activated output and the pre-activation value.
-        """
-        intermediate = self.omega_0 * self.linear(input)
-        return torch.sin(intermediate), intermediate
+    Args:
+        w0 (float): Scaling factor applied to the input before the sine activation.
+    """
+    def __init__(self, w0: float):
+        super(SineLayer, self).__init__()
+        self.w0 = w0
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.sin(self.w0 * x)
 
 
 class Siren(nn.Module):
     """
-    SIREN network using sine activations.
-    
-    Processes concatenated 3D points and ray directions to output RGB and density.
-    
+    NeRF variant using SIREN activations.
+    Processes raw 3D points and ray directions with sine-based MLPs.
+
     Args:
-        in_features (int): Input dimension (typically 6).
-        hidden_features (int): Neurons in hidden layers.
-        hidden_layers (int): Number of hidden layers.
-        out_features (int): Output dimension (typically 4: 3 for RGB, 1 for density).
-        outermost_linear (bool): If True, use a final linear layer.
-        first_omega_0 (float): Omega_0 for the first layer.
-        hidden_omega_0 (float): Omega_0 for hidden layers.
+        w0 (float): Initial scaling factor for the first SIREN activation.
+        hidden_w0 (float): Scaling factor for subsequent SIREN activations.
+        hidden_dim (int): Number of neurons in the hidden layers.
     """
-    def __init__(self, in_features: int = 6, hidden_features: int = 256, hidden_layers: int = 6, 
-                 out_features: int = 4, outermost_linear: bool = True, 
-                 first_omega_0: float = 30, hidden_omega_0: float = 1):
-        super().__init__()
+    def __init__(self, w0: float = 30, hidden_w0: float = 1, hidden_dim: int = 256):
+        super(Siren, self).__init__()
         
-        self.net = []
-        self.net.append(SineLayer(in_features, hidden_features, 
-                                  is_first=True, omega_0=first_omega_0))
+        # First MLP block
+        self.block1 = nn.Sequential(
+            nn.Linear(3, hidden_dim),  # 3D point input
+            SineLayer(w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0)
+        )
 
-        for i in range(hidden_layers):
-            self.net.append(SineLayer(hidden_features, hidden_features, 
-                                      is_first=False, omega_0=hidden_omega_0))
+        # Second MLP block with skip connection
+        self.block2 = nn.Sequential(
+            nn.Linear(hidden_dim + 3, hidden_dim),
+            SineLayer(w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0),
+            nn.Linear(hidden_dim, hidden_dim),
+            SineLayer(hidden_w0),
+            nn.Linear(hidden_dim, hidden_dim + 1)  # Density output
+        )
 
-        if outermost_linear:
-            final_linear = nn.Linear(hidden_features, out_features)
-            with torch.no_grad():
-                final_linear.weight.uniform_(
-                    -np.sqrt(6 / hidden_features) / hidden_omega_0, 
-                    np.sqrt(6 / hidden_features) / hidden_omega_0
-                )
-            self.net.append(final_linear)
-        else:
-            self.net.append(SineLayer(hidden_features, out_features, 
-                                      is_first=False, omega_0=hidden_omega_0))
-        
-        self.net = nn.Sequential(*self.net)
-    
+        # RGB head combining features with ray direction
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_dim + 3, hidden_dim // 2),
+            SineLayer(w0),
+            nn.Linear(hidden_dim // 2, 3),
+            nn.Sigmoid()
+        )
+
+        # Weight initialization for SIREN layers
+        with torch.no_grad():
+            # Initialize block1 linear layers
+            for i, module in enumerate(self.block1):
+                if isinstance(module, nn.Linear):
+                    if i == 0:
+                        bound = 1 / module.in_features
+                    else:
+                        bound = np.sqrt(6 / module.in_features) / hidden_w0
+                    module.weight.uniform_(-bound, bound)
+                    module.bias.uniform_(-bound, bound)
+            
+            # Initialize block2 linear layers
+            for i, module in enumerate(self.block2):
+                if isinstance(module, nn.Linear):
+                    if i == 0:
+                        bound = np.sqrt(6 / module.in_features) / w0
+                    else:
+                        bound = np.sqrt(6 / module.in_features) / hidden_w0
+                    module.weight.uniform_(-bound, bound)
+                    module.bias.uniform_(-bound, bound)
+            
+            # Initialize RGB head first linear layer
+            for i, module in enumerate(self.rgb_head):
+                if isinstance(module, nn.Linear):
+                    bound = np.sqrt(6 / module.in_features) / w0
+                    module.weight.uniform_(-bound, bound)
+                    module.bias.uniform_(-bound, bound)
+
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Forward pass: concatenates inputs, processes through the network, and splits output into RGB and density.
+        Forward pass: encode 3D points, compute features, and output RGB color and density.
+
+        Args:
+            points (torch.Tensor): Tensor representing raw 3D points.
+            rays_d (torch.Tensor): Tensor representing raw ray directions.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]:
+                - colors: Tensor with normalized RGB values.
+                - density: Tensor representing the density values.
         """
-        inputs = torch.cat((points, rays_d), dim=1)
-        output = self.net(inputs)
-        colors = torch.sigmoid(output[:, :3])
-        density = torch.relu(output[:, 3])
+        features = self.block1(points)
+        features = self.block2(torch.cat((features, points), dim=1))
+        density = torch.relu(features[:, -1])
+        features = features[:, :-1]
+        colors = self.rgb_head(torch.cat((features, rays_d), dim=1))
         return colors, density
