@@ -114,7 +114,7 @@ class Siren(nn.Module):
         # Second MLP block with skip connection
         self.block2 = nn.Sequential(
             nn.Linear(hidden_dim + 3, hidden_dim),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
             SineLayer(hidden_w0),
             nn.Linear(hidden_dim, hidden_dim),
@@ -127,7 +127,7 @@ class Siren(nn.Module):
         # RGB head combining features with ray direction
         self.rgb_head = nn.Sequential(
             nn.Linear(hidden_dim + 3, hidden_dim // 2),
-            SineLayer(w0),
+            SineLayer(hidden_w0),
             nn.Linear(hidden_dim // 2, 3),
             nn.Sigmoid()
         )
@@ -142,24 +142,18 @@ class Siren(nn.Module):
                     else:
                         bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
-                    module.bias.uniform_(-bound, bound)
             
             # Initialize block2 linear layers
             for i, module in enumerate(self.block2):
                 if isinstance(module, nn.Linear):
-                    if i == 0:
-                        bound = np.sqrt(6 / module.in_features) / w0
-                    else:
-                        bound = np.sqrt(6 / module.in_features) / hidden_w0
+                    bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
-                    module.bias.uniform_(-bound, bound)
             
             # Initialize RGB head first linear layer
             for i, module in enumerate(self.rgb_head):
                 if isinstance(module, nn.Linear):
-                    bound = np.sqrt(6 / module.in_features) / w0
+                    bound = np.sqrt(6 / module.in_features) / hidden_w0
                     module.weight.uniform_(-bound, bound)
-                    module.bias.uniform_(-bound, bound)
 
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """

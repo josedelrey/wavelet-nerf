@@ -125,6 +125,9 @@ def main():
     lr_decay = float(config.get('lr_decay', 150))
     lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
 
+    # First step render flag
+    first_step_render = config.get('first_step_render', 'False').lower() == 'true'
+
     # Model type
     if args.resume is not None:
         checkpoint_temp = torch.load(args.resume, map_location='cpu')
@@ -250,7 +253,7 @@ def main():
                     tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
                 # Log validation metrics
-                if step % val_interval == 0:
+                if step % val_interval == 0 and (step > 0 or first_step_render):
                     # Select a random image and render it
                     test_image_index = np.random.randint(N_val)
                     single_val_image = images_val_np[test_image_index:test_image_index+1]

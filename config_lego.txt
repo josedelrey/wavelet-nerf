@@ -41,6 +41,11 @@ log_interval = 50                  # Interval (in iterations) for logging traini
 val_interval = 5000                # Interval (in iterations) for running validation
 
 # --------------------
+# Monitoring Parameters
+# --------------------
+first_step_render = false          # First step validation render flag
+
+# --------------------
 # Model Type
 # --------------------
 model_type = siren
