@@ -16,4 +16,5 @@ def positional_encoding(x: torch.Tensor, L: int) -> torch.Tensor:
     for j in range(L):
         out.append(torch.sin(2 ** j * x))
         out.append(torch.cos(2 ** j * x))
+        
     return torch.cat(out, dim=1)

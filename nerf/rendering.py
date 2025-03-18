@@ -1,6 +1,5 @@
 import torch
 from torch import Tensor
-from tqdm import tqdm
 from typing import Tuple
 
 
@@ -8,8 +7,7 @@ def stratified_sampling(
     near: float,
     far: float,
     num_bins: int,
-    device: str = 'cpu'
-) -> Tensor:
+    device: str = 'cpu') -> Tensor:
     """
     Perform stratified sampling within a given depth range.
 
@@ -35,8 +33,7 @@ def generate_sample_positions(
     near: float,
     far: float,
     num_samples: int,
-    device: str = 'cpu'
-) -> Tuple[Tensor, Tensor]:
+    device: str = 'cpu') -> Tuple[Tensor, Tensor]:
     """
     Generate stratified sample positions for a batch of rays and compute sample intervals.
 
@@ -70,8 +67,7 @@ def generate_sample_positions(
 def normalize_positions(
     positions: Tensor,
     near: float,
-    far: float
-) -> Tensor:
+    far: float) -> Tensor:
     """
     Normalize positions to the range [-1, 1].
 
@@ -91,8 +87,7 @@ def query_model(
     sample_positions_flat: Tensor,
     directions_flat: Tensor,
     near: float,
-    far: float
-) -> Tuple[Tensor, Tensor]:
+    far: float) -> Tuple[Tensor, Tensor]:
     """
     Normalize sample positions and query the model to obtain colors and densities.
 
@@ -114,7 +109,7 @@ def query_model(
 
 def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
     """
-    Compute cumulative transmittance along rays.
+    Compute accumulated transmittance along rays.
 
     Args:
         betas (Tensor): Complement of alpha values (1 - alpha) for each sample.
@@ -131,8 +126,7 @@ def composite_volume(
     colors: Tensor,
     densities: Tensor,
     deltas: Tensor,
-    white_background: bool
-) -> Tensor:
+    white_background: bool) -> Tensor:
     """
     Composite colors along each ray using volumetric rendering.
 
@@ -168,8 +162,7 @@ def render_nerf(
     num_samples: int = 256,
     device: str = 'cpu',
     white_background: bool = True,
-    chunk_size: int = 8192,
-) -> Tensor:
+    chunk_size: int = 8192) -> Tensor:
     """
     Render rays with a NeRF model via volumetric integration.
 

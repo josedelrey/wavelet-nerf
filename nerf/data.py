@@ -7,7 +7,8 @@ from torch.utils.data import Dataset
 from typing import Tuple
 
 
-def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, float]:
+def load_dataset(dataset_path: str,
+                 mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Load images and camera-to-world transformation matrices from the dataset.
 
@@ -57,7 +58,9 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
     return images, c2w_matrices, focal_length
 
 
-def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def compute_rays(images: np.ndarray,
+                 c2w_matrices: np.ndarray,
+                 focal_length: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Compute camera ray origins and directions, and extract target pixel colors.
 
