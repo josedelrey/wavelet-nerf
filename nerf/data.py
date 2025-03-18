@@ -18,7 +18,7 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
 
     Args:
         dataset_path (str): Base directory of the dataset.
-        mode (str): Dataset split mode ('train', 'val', or 'test'). Defaults to 'train'.
+        mode (str): Dataset split mode ('train', 'val', or 'test').
 
     Returns:
         Tuple[np.ndarray, np.ndarray, float]:
@@ -40,7 +40,7 @@ def load_dataset(dataset_path: str, mode: str = 'train') -> Tuple[np.ndarray, np
         img_path = os.path.join(dataset_path, rel_path + ".png")
         img = imageio.imread(img_path).astype(np.float32) / 255.0
         
-        # Composite image with alpha channel over white background if applicable
+        # Composite image with alpha channel over white background
         if img.shape[-1] == 4:
             alpha = img[..., 3:4]
             img = img[..., :3] * alpha + (1.0 - alpha)
@@ -94,7 +94,7 @@ def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray, focal_length: flo
     R = c2w_matrices[:, :3, :3]
     t = c2w_matrices[:, :3, 3]
 
-    # Vectorized application of camera-space directions transformation
+    # Rotate ray directions to world space
     rays_d = np.einsum('nij,hwj->nhwi', R, directions_cam)
     rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
 
