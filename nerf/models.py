@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import Tuple
+
 from nerf.encoding import positional_encoding
 
 
