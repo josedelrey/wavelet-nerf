@@ -10,3 +10,6 @@ models/
 # Ignore note files
 output_command.txt
 output_file.txt
+
+# Ignore python cache files
+__pycache__/
