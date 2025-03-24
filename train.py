@@ -84,6 +84,7 @@ def log_training_metrics(step, scheduler, loss, start_time, writer):
     tqdm.write(log_message)
     writer.add_scalar('loss', loss.item(), step)
     writer.add_scalar('psnr', mse_to_psnr(loss.item()), step)
+    writer.add_scalar('learning_rate', current_lr, step)
 
 
 def main():
@@ -105,12 +106,12 @@ def main():
     # Dataset parameters
     dataset_path = config.get('dataset_path', './datasets/lego')
 
-    # Sampling Parameters
+    # Sampling parameters
     num_random_rays = int(config.get('num_random_rays', 1024))
     chunk_size = int(config.get('chunk_size', 8192))
     num_samples = int(config.get('num_samples', 256))
 
-    # Training Parameters
+    # Training parameters
     num_iters = int(config.get('num_iters', 150000))
     learning_rate = float(config.get('learning_rate', 5e-4))
     near = float(config.get('near', 2.0))
@@ -215,7 +216,7 @@ def main():
                 try:
                     rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
                 except StopIteration:
-                    # Reinitialize iterator if the DataLoader is exhausted
+                    # Reset the iterator if it reaches the end of the dataloader
                     loader_iter = iter(data_loader)
                     rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
                 
