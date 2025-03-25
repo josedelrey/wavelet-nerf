@@ -13,3 +13,6 @@ output_file.txt
 
 # Ignore python cache files
 __pycache__/
+
+# Ignore rendered frames directory
+rendered_frames/

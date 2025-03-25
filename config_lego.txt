@@ -1,5 +1,5 @@
 # =============================================================================
-# NeRF Training Configuration for Lego Dataset
+# NeRF Configuration File for Lego Dataset
 # =============================================================================
 
 # --------------------
@@ -11,7 +11,7 @@ dataset_path = ./datasets/lego     # Directory containing the dataset
 # Sampling Parameters
 # --------------------
 num_random_rays = 1024             # Number of random rays sampled per iteration
-chunk_size = 4096                  # Number of rays processed in a single rendering batch
+chunk_size = 1024                  # Number of rays processed in a single rendering batch
 num_samples = 256                  # Number of samples along each ray
 
 # --------------------
@@ -49,3 +49,8 @@ first_step_render = false          # First step validation render flag
 # Model Type
 # --------------------
 model_type = siren
+
+# --------------------
+# Evaluation Render Parameters
+# --------------------
+num_render_poses = 80
