@@ -8,7 +8,8 @@ from typing import Tuple
 
 
 def load_dataset(dataset_path: str,
-                 mode: str = 'train') -> Tuple[np.ndarray, np.ndarray, float]:
+                 mode: str = 'train',
+                 single_image: bool = False) -> Tuple[np.ndarray, np.ndarray, float]:
     """
     Load images and camera-to-world transformation matrices from the dataset.
 
@@ -48,6 +49,9 @@ def load_dataset(dataset_path: str,
         
         images.append(img)
         c2w_matrices.append(np.array(frame["transform_matrix"], dtype=np.float32))
+        
+        if single_image:
+            break
     
     images = np.stack(images, axis=0)
     c2w_matrices = np.stack(c2w_matrices, axis=0)
