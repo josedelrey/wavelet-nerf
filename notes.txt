@@ -1,7 +1,3 @@
-Remaining NeRF implementations:
-- Hierarchical sampling
-- Details in the original NeRF implementation such as adding noise to the inputs
-
 TODO:
 - Implement other models:
     + Implement GaborNet

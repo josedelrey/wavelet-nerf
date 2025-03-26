@@ -128,13 +128,14 @@ def main():
     # Learning rate decay parameters
     lr_decay = float(config.get('lr_decay', 150))
     lr_decay_factor = float(config.get('lr_decay_factor', 0.1))
+    lr_min = float(config.get('lr_min', 1e-5))
 
     # First step render flag
     first_step_render = config.get('first_step_render', 'False').lower() == 'true'
 
     # Model type
     if args.resume is not None:
-        checkpoint_temp = torch.load(args.resume, map_location='cpu')
+        checkpoint_temp = torch.load(args.resume, map_location='cpu', weights_only=True)
         model_type = checkpoint_temp.get('model_type', config.get('model_type', 'NeRF')).lower()
         print(f"Resuming training with model type from checkpoint: {model_type}")
     else:
@@ -157,6 +158,8 @@ def main():
     print(f"Save interval: {save_interval}")
     print(f"LR decay: {lr_decay}")
     print(f"LR decay factor: {lr_decay_factor}")
+    print(f"LR min: {lr_min}")
+    print(f"First step render: {first_step_render}")
     print(f"Log interval: {log_interval}")
     print(f"Validation interval: {val_interval}")
     print(f"Model type: {model_type}")
@@ -192,7 +195,10 @@ def main():
 
     # Learning rate scheduler
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000))
-    scheduler = ExponentialLR(optimizer, gamma=gamma)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(
+        optimizer,
+        lr_lambda=lambda step: max(gamma**step, lr_min / learning_rate)
+    )
 
     # TensorBoard writer
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')

@@ -33,6 +33,7 @@ save_interval = 5000               # Interval (in iterations) for saving model c
 # --------------------
 lr_decay = 300                     # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate after each decay interval
+lr_min = 1e-4                      # Minimum learning rate
 
 # --------------------
 # Monitoring Parameters
@@ -53,4 +54,4 @@ model_type = siren
 # --------------------
 # Evaluation Render Parameters
 # --------------------
-num_render_poses = 80
+num_render_poses = 80              # Number of frames of the evaluation video
