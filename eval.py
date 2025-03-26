@@ -8,6 +8,7 @@ from tqdm import tqdm
 from nerf.data import load_dataset, compute_rays
 from nerf.models import NeRF, Siren
 from nerf.rendering import render_nerf
+from nerf.utils import parse_config
 
 
 def translate_by_t_along_z(t):
@@ -38,34 +39,6 @@ def pose_spherical(theta, phi, radius):
     c2w = rotate_by_theta_along_y(theta / 180 * np.pi) @ c2w
     c2w = np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) @ c2w
     return c2w
-
-
-def parse_config(config_path: str) -> dict:
-    """
-    Parse a configuration file where each non-empty, non-comment line is of the format:
-        key = value  # optional inline comment
-    Returns a dictionary mapping keys to values.
-    """
-    config = {}
-    with open(config_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-
-            if not line or line.startswith('#'):
-                continue
-
-            line = line.split('#', 1)[0].strip()
-
-            if not line:
-                continue
-
-            if '=' in line:
-                key, value = line.split('=', maxsplit=1)
-                config[key.strip()] = value.strip()
-            else:
-                print(f"Warning: Invalid line in config file: {line}")
-
-    return config
 
 
 def main():
