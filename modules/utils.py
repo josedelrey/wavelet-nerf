@@ -3,7 +3,7 @@ import datetime
 import torch
 from tqdm import tqdm
 
-from nerf.loss import mse_to_psnr
+from modules.loss import mse_to_psnr
 
 
 def parse_config(config_path: str) -> dict:

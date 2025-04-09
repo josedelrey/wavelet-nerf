@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 from typing import Tuple
 
-from nerf.encoding import positional_encoding
+from modules.encoding import positional_encoding
 
 
 class NeRF(nn.Module):
@@ -129,7 +129,7 @@ class SirenLayer(nn.Module):
 
 class Siren(nn.Module):
     """
-    SIREN-ized NeRF model with a structure similar to the NeRF class.
+    SIREN-ized NeRF model.
     
     This model always uses separate branches for density and appearance (RGB).
     It processes input 3D points with a base MLP (using SIREN layers),

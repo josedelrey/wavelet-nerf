@@ -5,10 +5,10 @@ import os
 import imageio
 from tqdm import tqdm
 
-from nerf.data import load_dataset, compute_rays
-from nerf.models import NeRF, Siren
-from nerf.rendering import render_nerf
-from nerf.utils import parse_config
+from modules.data import load_dataset, compute_rays
+from modules.models import NeRF, Siren
+from modules.rendering import render_nerf
+from modules.utils import parse_config
 
 
 def translate_by_t_along_z(t):

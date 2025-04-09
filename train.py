@@ -9,12 +9,12 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from nerf.data import load_dataset, compute_rays, RayDataset
-from nerf.models import NeRF, Siren
-from nerf.rendering import render_nerf
-from nerf.loss import mse_to_psnr
-from nerf.utils import parse_config, format_elapsed_time
-from nerf.utils import save_checkpoint, log_training_metrics
+from modules.data import load_dataset, compute_rays, RayDataset
+from modules.models import NeRF, Siren, WaveletNeRF
+from modules.rendering import render_nerf
+from modules.loss import mse_to_psnr
+from modules.utils import parse_config, format_elapsed_time
+from modules.utils import save_checkpoint, log_training_metrics
 
 
 def main():
@@ -101,6 +101,8 @@ def main():
         model = NeRF().to(device)
     elif model_type == 'siren':
         model = Siren().to(device)
+    elif model_type == 'wavelet':
+        model = WaveletNeRF().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
 
