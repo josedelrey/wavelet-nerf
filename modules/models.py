@@ -316,7 +316,80 @@ class WaveletMFN(nn.Module):
         return self.linear[self.hidden_layers - 1](z)
 
 
-class WaveletMFNNeRF(nn.Module):
+class WaveletMFNNeRFSimple(nn.Module):
+    """
+    A simplified NeRF model based on a WaveletMFN backbone.
+    This model takes 3D coordinates as input and directly predicts both
+    the density (volume occupancy) and the RGB color for each point.
+    
+    Args:
+        in_features (int): Number of input features (default: 3 for (x,y,z)).
+        hidden_features (int): Number of features in the hidden layers.
+        hidden_layers (int): Number of hidden layers in the WaveletMFN backbone.
+        omega0 (float): Initial frequency parameter for the Morlet wavelets.
+        sigma_mul (float): Multiplicative factor applied to the density output.
+        rgb_mul (float): Multiplicative factor applied to the RGB output.
+    """
+    def __init__(self, 
+                 in_features: int = 3,
+                 hidden_features: int = 256,
+                 hidden_layers: int = 6,
+                 omega0: float = 5.0,
+                 sigma_mul: float = 1.0,
+                 rgb_mul: float = 1.0) -> None:
+        super().__init__()
+        # WaveletMFN backbone produces a feature vector from the input coordinates.
+        # Here, we set out_features equal to hidden_features so that we can feed
+        # the resulting features to separate heads.
+        self.backbone = WaveletMFN(
+            in_features=in_features,
+            hidden_features=hidden_features,
+            out_features=hidden_features,
+            hidden_layers=hidden_layers,
+            omega0=omega0
+        )
+        
+        # Density head: outputs a single scalar value (density) from features.
+        self.density_head = nn.Linear(hidden_features, 1)
+        
+        # RGB head: transforms features into an RGB color vector.
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_features, hidden_features // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_features // 2, 3),
+            nn.Sigmoid()  # Ensures values are in the [0, 1] range.
+        )
+        
+        self.sigma_mul = sigma_mul
+        self.rgb_mul = rgb_mul
+
+    def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass through the model.
+        
+        Args:
+            points (torch.Tensor): Input 3D coordinates, shape (N, 3).
+        
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: 
+                - rgb: Predicted RGB colors, shape (N, 3).
+                - density: Predicted densities, shape (N,).
+        """
+        # Extract features using the WaveletMFN backbone.
+        features = self.backbone(points)
+        
+        # Predict density. Apply ReLU to enforce non-negativity, then scale.
+        sigma = self.density_head(features)
+        density = torch.relu(sigma) * self.sigma_mul
+        
+        # Predict RGB colors. The RGB head includes a Sigmoid, and we further scale the input.
+        rgb = self.rgb_head(features)
+        rgb = torch.sigmoid(rgb * self.rgb_mul)
+        
+        return rgb, density.squeeze(-1)
+
+
+class WaveletMFNNeRFSeparate(nn.Module):
     """
     A NeRF model that uses two separate WaveletMFN networks:
     1. A density branch that predicts density based solely on spatial coordinates.
@@ -340,10 +413,10 @@ class WaveletMFNNeRF(nn.Module):
                  density_hidden_layers: int = 4,
                  color_hidden_layers: int = 4,
                  dir_encoding_dim: int = 4,
-                 sigma_mul: float = 10.0,
+                 sigma_mul: float = 1.0,
                  rgb_mul: float = 1.0,
                  omega0: float = 5.0) -> None:
-        super(WaveletMFNNeRF, self).__init__()
+        super(WaveletMFNNeRFSeparate, self).__init__()
         self.dir_encoding_dim = dir_encoding_dim
         self.sigma_mul = sigma_mul
         self.rgb_mul = rgb_mul

@@ -1,3 +1,2 @@
 TODO:
-- Fixing Wavelet-Based MFN. Ideas:
-    + Use two separate MLPs for the computation of density and RGB
+- Train both simple MFN and separate MFN and compare results.
