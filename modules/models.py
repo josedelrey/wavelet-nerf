@@ -201,3 +201,193 @@ class Siren(nn.Module):
         # Scale and constrain rgb values to [0, 1]
         rgb = torch.sigmoid_(rgb * self.rgb_mul)
         return rgb, density.squeeze(-1)
+
+
+class WaveletFilter(nn.Module):
+    """
+    A Morlet wavelet filter module used for feature extraction.
+
+    This layer applies a set of learnable Morlet wavelet filters to the input tensor.
+    The filters are parameterized by learned means (mu) and gamma values, similar to
+    the Gabor filter. Instead of using a sine nonlinearity, it uses a Morlet wavelet
+    function:
+    
+        ψ(u) = -e̶x̶p̶(̶-̶u̶²̶/̶2̶) * cos(ω₀ * u) - exp(-ω₀²/2)
+    
+    where ω₀ is a learnable frequency parameter.
+    
+    Args:
+        in_dim (int): Number of input features.
+        out_dim (int): Number of output features.
+        alpha (float): A scaling factor for the gamma distribution.
+        beta (float, optional): The rate parameter for the Gamma distribution.
+        omega0 (float): Initial frequency parameter for the Morlet wavelet.
+    """
+    def __init__(self, in_dim: int, out_dim: int, alpha: float, beta: float = 1.0, omega0: float = 5.0) -> None:
+        super(WaveletFilter, self).__init__()
+        # Learned centers for each filter
+        self.mu = nn.Parameter(torch.rand((out_dim, in_dim)) * 2 - 1)
+        # Learned gamma values controlling the Gaussian envelope width
+        self.gamma = nn.Parameter(torch.distributions.gamma.Gamma(alpha, beta).sample((out_dim,)))
+        # Linear projection to generate the argument for the wavelet nonlinearity
+        self.linear = nn.Linear(in_dim, out_dim)
+        # Learnable frequency parameter for the Morlet wavelet
+        self.omega0 = nn.Parameter(torch.tensor(omega0))
+        self.init_weights()
+    
+    def init_weights(self) -> None:
+        # Scale the weights based on gamma (similar to GaborFilter)
+        self.linear.weight.data *= 128. * torch.sqrt(self.gamma.unsqueeze(-1))
+        self.linear.bias.data.uniform_(-np.pi, np.pi)
+    
+    def morlet_wavelet(self, u: torch.Tensor) -> torch.Tensor:
+        """
+        Applies the Morlet wavelet nonlinearity to the input u.
+        
+        ψ(u) = -e̶x̶p̶(̶-̶u̶²̶/̶2̶) * cos(ω₀ * u) - exp(-ω₀²/2)
+        """
+        return torch.cos(self.omega0 * u) - torch.exp(-0.5 * (self.omega0**2))
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Compute squared Euclidean distance between x and each filter's center
+        norm = (x ** 2).sum(dim=1).unsqueeze(-1) + (self.mu ** 2).sum(dim=1).unsqueeze(0) - 2 * x @ self.mu.T
+        # Gaussian envelope based on the learned gamma values
+        envelope = torch.exp(- self.gamma.unsqueeze(0) / 2. * norm)
+        # Linear projection of x
+        lin_out = self.linear(x)
+        # Apply the Morlet wavelet nonlinearity
+        wavelet_response = self.morlet_wavelet(lin_out)
+        # Return the modulated response
+        return envelope * wavelet_response
+
+
+class WaveletMFN(nn.Module):
+    """
+    A network based on multiple Morlet wavelet filters for feature extraction and transformation.
+
+    This model mirrors the structure of GaborNet but replaces the Gabor filters with learnable
+    Morlet wavelet filters. For an input coordinate (e.g., (x, y, z)), the network first extracts
+    a high-dimensional feature vector using a MorletWaveletFilter. In subsequent layers, it applies
+    a linear transformation whose output is element-wise multiplied by a fresh Morlet filter response
+    (computed from the same coordinate). Finally, a linear layer decodes the high-dimensional features
+    into the output (e.g., density or an intermediate feature embedding).
+
+    Args:
+        in_features (int): Number of input features (e.g., 3 for spatial coordinates).
+        hidden_features (int): Number of features in the hidden layers.
+        out_features (int): Number of output features.
+        hidden_layers (int): Number of hidden layers in the network.
+        omega0 (float): Initial frequency parameter for the Morlet wavelet.
+    """
+    def __init__(self, 
+                 in_features: int = 2, 
+                 hidden_features: int = 256, 
+                 out_features: int = 1, 
+                 hidden_layers: int = 4,
+                 omega0: float = 5.0) -> None:
+        super(WaveletMFN, self).__init__()
+        self.hidden_layers = hidden_layers
+
+        # Initialize a list of MorletWaveletFilter modules (one per layer)
+        self.morlet_filters = nn.ModuleList([
+            WaveletFilter(in_features, hidden_features, alpha=6.0 / hidden_layers, omega0=omega0)
+            for _ in range(hidden_layers)
+        ])
+
+        # Initialize the linear layers.
+        # For hidden_layers - 1 layers, we have a linear mapping from hidden_features to hidden_features,
+        # and the final layer maps from hidden_features to out_features.
+        self.linear = nn.ModuleList(
+            [nn.Linear(hidden_features, hidden_features) for _ in range(hidden_layers - 1)] +
+            [nn.Linear(hidden_features, out_features)]
+        )
+
+        # Initialize weights for the linear layers for hidden layers
+        for lin in self.linear[:hidden_layers - 1]:
+            lin.weight.data.uniform_(-np.sqrt(1.0 / hidden_features), np.sqrt(1.0 / hidden_features))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # First wavelet filter: get initial high-dimensional feature vector from the input coordinate
+        z = self.morlet_filters[0](x)
+        # Recursively apply linear layers and modulate with subsequent Morlet filter responses
+        for i in range(self.hidden_layers - 1):
+            z = self.linear[i](z) * self.morlet_filters[i + 1](x)
+        # Final linear transformation to decode into the output
+        return self.linear[self.hidden_layers - 1](z)
+
+
+class WaveletMFNNeRF(nn.Module):
+    """
+    A NeRF model that uses two separate WaveletMFN networks:
+    1. A density branch that predicts density based solely on spatial coordinates.
+    2. A color branch that computes spatial features and, after fusing them with a positional encoding
+       of the ray direction, produces an RGB color.
+    
+    The density is scaled and passed through ReLU, while the color branch applies an RGB head
+    similar to the Siren architecture.
+    
+    Args:
+        hidden_features (int): Number of hidden features for both branches.
+        density_hidden_layers (int): Number of hidden layers for the density branch.
+        color_hidden_layers (int): Number of hidden layers for the color feature branch.
+        dir_encoding_dim (int): Number of frequencies for the ray direction positional encoding.
+        sigma_mul (float): Multiplicative factor for the density output.
+        rgb_mul (float): Multiplicative factor applied before color activation.
+        omega0 (float): Frequency parameter used in both WaveletMFN networks.
+    """
+    def __init__(self,
+                 hidden_features: int = 256,
+                 density_hidden_layers: int = 4,
+                 color_hidden_layers: int = 4,
+                 dir_encoding_dim: int = 4,
+                 sigma_mul: float = 10.0,
+                 rgb_mul: float = 1.0,
+                 omega0: float = 5.0) -> None:
+        super(WaveletMFNNeRF, self).__init__()
+        self.dir_encoding_dim = dir_encoding_dim
+        self.sigma_mul = sigma_mul
+        self.rgb_mul = rgb_mul
+
+        # Density branch: computes density from spatial coordinates (input: 3D point; output: 1 scalar)
+        self.density_mfn = WaveletMFN(
+            in_features=3,
+            hidden_features=hidden_features,
+            out_features=1,
+            hidden_layers=density_hidden_layers,
+            omega0=omega0
+        )
+
+        # Color branch: computes an intermediate feature embedding from spatial coordinates.
+        # The output dimension is equal to hidden_features so that it can be fused with encoded ray directions.
+        self.color_mfn = WaveletMFN(
+            in_features=3,
+            hidden_features=hidden_features,
+            out_features=hidden_features,
+            hidden_layers=color_hidden_layers,
+            omega0=omega0
+        )
+
+        # RGB head: combines the feature from color_mfn with the positional encoding of the ray direction.
+        # The ray direction is encoded with a size of 6 * dir_encoding_dim + 3.
+        ray_encoding_size = 6 * dir_encoding_dim + 3
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_features + ray_encoding_size, hidden_features // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_features // 2, 3)
+        )
+
+    def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Compute density from the density branch: shape (batch, 1)
+        density_raw = self.density_mfn(points)
+        density = torch.relu(density_raw) * self.sigma_mul
+
+        # Compute spatial features from the color branch: shape (batch, hidden_features)
+        features = self.color_mfn(points)
+        # Encode the viewing (ray) directions using the provided positional encoding.
+        rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+        # Concatenate the spatial features with the encoded direction information.
+        rgb_input = torch.cat((features, rays_d_enc), dim=-1)
+        # Process through the RGB head and apply scaling followed by a sigmoid to constrain to [0, 1].
+        rgb = torch.sigmoid(self.rgb_head(rgb_input) * self.rgb_mul)
+
+        return rgb, density.squeeze(-1)
