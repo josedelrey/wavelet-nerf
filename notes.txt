@@ -1,2 +1,8 @@
 TODO:
 - Train both simple MFN and separate MFN and compare results.
+
+Results:
+- Simple Wavelet MFN:
+- Separate Wavelet MFN: 17 db
+- Partial Wavelet MFN: 
+- multiscale Wavelet MFN: 24.5 db

@@ -55,3 +55,4 @@ model_type = siren
 # Evaluation Render Parameters
 # --------------------
 num_render_poses = 80              # Number of frames of the evaluation video
+num_samples_eval = 256             # Number of samples per ray for evaluation

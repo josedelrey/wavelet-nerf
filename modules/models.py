@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import Tuple
+from torch.nn import functional as F
 
 from modules.encoding import positional_encoding
 
@@ -261,6 +262,110 @@ class WaveletFilter(nn.Module):
         return envelope * wavelet_response
 
 
+class MultiScaleWaveletFilter(nn.Module):
+    def __init__(self, in_dim: int, out_dim: int, alpha: float, beta: float = 1.0,
+                 low_omega0: float = 2.0, high_omega0: float = 10.0) -> None:
+        """
+        Splits filters into two groups:
+          - One group uses a low ω₀ for low-frequency (broader Gaussian) responses.
+          - The other group uses a high ω₀ for high-frequency (narrower Gaussian) responses.
+        The outputs of both groups are concatenated along the feature dimension.
+        
+        Args:
+            in_dim: Dimensionality of the input.
+            out_dim: Total number of filters.
+            alpha, beta: Parameters for the gamma distribution.
+            low_omega0: Frequency parameter for the low-frequency group.
+            high_omega0: Frequency parameter for the high-frequency group.
+        """
+        super(MultiScaleWaveletFilter, self).__init__()
+        # Split filters into low and high frequency groups.
+        low_dim = out_dim // 2
+        high_dim = out_dim - low_dim
+
+        self.low_wavelet = WaveletFilter(in_dim, low_dim, alpha, beta, omega0=low_omega0)
+        self.high_wavelet = WaveletFilter(in_dim, high_dim, alpha, beta, omega0=high_omega0)
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        low_response = self.low_wavelet(x)
+        high_response = self.high_wavelet(x)
+        # Concatenate features along the last dimension.
+        return torch.cat([low_response, high_response], dim=-1)
+    
+
+class WaveletFilterLearnable(nn.Module):
+    """
+    A wavelet filter module with learnable alpha and beta parameters.
+
+    Instead of fixing alpha and beta for sampling a Gamma-distributed parameter,
+    this version learns per-filter alpha and beta, and uses them to compute 
+    gamma = softplus(alpha) / softplus(beta) as the effective envelope width.
+    """
+    def __init__(self, in_dim: int, out_dim: int, 
+                 init_alpha: float = 2.0, init_beta: float = 1.0, 
+                 omega0: float = 5.0) -> None:
+        """
+        Args:
+            in_dim (int): Input feature dimensionality.
+            out_dim (int): Number of filters / output dimensionality.
+            init_alpha (float): Initial value for alpha (shape parameter).
+            init_beta (float): Initial value for beta (rate parameter).
+            omega0 (float): Initial frequency parameter for the Morlet wavelet.
+        """
+        super(WaveletFilterLearnable, self).__init__()
+        
+        # Initialize learnable alpha and beta as vectors (one per filter)
+        # We wrap them with nn.Parameter and later use softplus to ensure positivity.
+        self.alpha = nn.Parameter(torch.full((out_dim,), init_alpha))
+        self.beta = nn.Parameter(torch.full((out_dim,), init_beta))
+        
+        # Instead of sampling gamma once, we compute it in forward pass:
+        #   gamma = softplus(alpha) / softplus(beta)
+        # This value will change as alpha and beta are updated.
+        
+        # Learned centers for each filter: shape (out_dim, in_dim)
+        self.mu = nn.Parameter(torch.rand((out_dim, in_dim)) * 2 - 1)
+        
+        # Linear projection layer
+        self.linear = nn.Linear(in_dim, out_dim)
+        
+        # Learnable frequency parameter for the Morlet wavelet.
+        # (We keep omega0 as a learnable parameter too, if desired.)
+        self.omega0 = nn.Parameter(torch.tensor(omega0))
+        
+        self.init_weights()
+    
+    def init_weights(self) -> None:
+        # We initialize the linear weights scaled by a factor based on gamma.
+        # Note: Since gamma will be computed in the forward pass, we use the initial ratio.
+        init_gamma = F.softplus(self.alpha).detach() / (F.softplus(self.beta).detach() + 1e-6)
+        self.linear.weight.data *= 128. * torch.sqrt(init_gamma.unsqueeze(-1))
+        self.linear.bias.data.uniform_(-np.pi, np.pi)
+    
+    def morlet_wavelet(self, u: torch.Tensor) -> torch.Tensor:
+        # Apply the Morlet wavelet nonlinearity.
+        return torch.cos(self.omega0 * u) - torch.exp(-0.5 * (self.omega0 ** 2))
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Compute gamma from the learnable alpha and beta.
+        # The softplus ensures gamma is positive.
+        gamma = F.softplus(self.alpha) / (F.softplus(self.beta) + 1e-6)
+        
+        # Compute squared Euclidean distances between x and each filter's center.
+        # Shape: (batch_size, out_dim)
+        norm = (x ** 2).sum(dim=1, keepdim=True) + (self.mu ** 2).sum(dim=1).unsqueeze(0) - 2 * x @ self.mu.T
+        
+        # Compute the Gaussian envelope using the computed gamma.
+        envelope = torch.exp(- gamma.unsqueeze(0) / 2. * norm)
+        
+        # Apply the linear projection and the wavelet nonlinearity.
+        lin_out = self.linear(x)
+        wavelet_response = self.morlet_wavelet(lin_out)
+        
+        # Return the modulated response.
+        return envelope * wavelet_response
+
+
 class WaveletMFN(nn.Module):
     """
     A network based on multiple Morlet wavelet filters for feature extraction and transformation.
@@ -332,8 +437,8 @@ class WaveletMFNNeRFSimple(nn.Module):
     """
     def __init__(self, 
                  in_features: int = 3,
-                 hidden_features: int = 256,
-                 hidden_layers: int = 6,
+                 hidden_features: int = 512,
+                 hidden_layers: int = 4,
                  omega0: float = 5.0,
                  sigma_mul: float = 1.0,
                  rgb_mul: float = 1.0) -> None:
@@ -463,4 +568,273 @@ class WaveletMFNNeRFSeparate(nn.Module):
         # Process through the RGB head and apply scaling followed by a sigmoid to constrain to [0, 1].
         rgb = torch.sigmoid(self.rgb_head(rgb_input) * self.rgb_mul)
 
+        return rgb, density.squeeze(-1)
+
+
+class WaveletMFNNeRFPartial(nn.Module):
+    """
+    A NeRF model that integrates a partial positional encoding strategy.
+    
+    This model processes raw 3D points (keeping Euclidean distances meaningful for the
+    wavelet filters) through separate WaveletMFN backbones for density and color. In the
+    RGB head, the model reintroduces a positional encoding for the points (and also applies
+    a positional encoding to the viewing direction) before predicting RGB colors.
+    
+    Args:
+        hidden_features (int): Number of hidden features for both branches.
+        density_hidden_layers (int): Number of hidden layers for the density branch.
+        color_hidden_layers (int): Number of hidden layers for the color branch.
+        point_encoding_dim (int): Number of frequencies for the positional encoding for points.
+                                   (This encoding is only used in the RGB head.)
+        dir_encoding_dim (int): Number of frequencies for the positional encoding of ray directions.
+        sigma_mul (float): Multiplicative factor for the density output.
+        rgb_mul (float): Multiplicative factor for the RGB output.
+        omega0 (float): Frequency parameter used in both WaveletMFN networks.
+    """
+    def __init__(self, 
+                 hidden_features: int = 256,
+                 density_hidden_layers: int = 4,
+                 color_hidden_layers: int = 4,
+                 point_encoding_dim: int = 10,
+                 dir_encoding_dim: int = 4,
+                 sigma_mul: float = 1.0,
+                 rgb_mul: float = 1.0,
+                 omega0: float = 5.0) -> None:
+        super(WaveletMFNNeRFPartial, self).__init__()
+        self.point_encoding_dim = point_encoding_dim
+        self.dir_encoding_dim = dir_encoding_dim
+        self.sigma_mul = sigma_mul
+        self.rgb_mul = rgb_mul
+
+        # Density branch using the WaveletMFN backbone on raw coordinates.
+        self.density_mfn = WaveletMFN(
+            in_features=3,
+            hidden_features=hidden_features,
+            out_features=1,
+            hidden_layers=density_hidden_layers,
+            omega0=omega0
+        )
+        
+        # Color branch using the WaveletMFN backbone on raw coordinates.
+        # The output dimensionality is set equal to hidden_features.
+        self.color_mfn = WaveletMFN(
+            in_features=3,
+            hidden_features=hidden_features,
+            out_features=hidden_features,
+            hidden_layers=color_hidden_layers,
+            omega0=omega0
+        )
+        
+        # Compute the sizes for the positional encodings.
+        # (For each dimension, the positional encoding expands the input to: 6 * encoding_dim + 3)
+        point_pe_size = point_encoding_dim * 6 + 3
+        dir_pe_size = dir_encoding_dim * 6 + 3
+        
+        # RGB head:
+        # Combines the output of the color branch (raw features), the reintroduced positional encoding
+        # of the points, and the encoded ray directions.
+        rgb_input_dim = hidden_features + point_pe_size + dir_pe_size
+        self.rgb_head = nn.Sequential(
+            nn.Linear(rgb_input_dim, hidden_features // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_features // 2, 3)
+        )
+
+    def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass:
+            - Processes raw coordinates through density and color WaveletMFN backbones.
+            - Applies a positional encoding to the ray directions and reintroduces a positional encoding
+              for the points in the RGB head.
+            - Predicts density (using a ReLU and scaling) and RGB color (using an RGB head followed
+              by sigmoid activation and scaling).
+        
+        Args:
+            points (torch.Tensor): Input 3D coordinates, shape (N, 3).
+            rays_d (torch.Tensor): Ray directions, shape (N, 3).
+        
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: 
+                - rgb: Predicted RGB colors, shape (N, 3).
+                - density: Predicted densities, shape (N,).
+        """
+        # Density prediction:
+        density_raw = self.density_mfn(points)  # (N, 1)
+        density = torch.relu(density_raw) * self.sigma_mul
+        
+        # Color branch:
+        features = self.color_mfn(points)  # (N, hidden_features)
+        # Reintroduce a positional encoding for the points (partial encoding)
+        points_enc = positional_encoding(points, self.point_encoding_dim)
+        # Encode ray directions using positional encoding
+        rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+        
+        # Concatenate the color branch features with both point and ray direction encodings.
+        rgb_input = torch.cat((features, points_enc, rays_d_enc), dim=-1)
+        rgb = self.rgb_head(rgb_input)
+        # Scale and restrict the RGB values to the [0,1] range.
+        rgb = torch.sigmoid(rgb * self.rgb_mul)
+        
+        return rgb, density.squeeze(-1)
+
+
+class MultiScaleWaveletNeRF(nn.Module):
+    def __init__(self, 
+                 point_dim: int = 3,
+                 dir_dim: int = 3,
+                 num_freqs_dir: int = 4,
+                 hidden_features: int = 512,
+                 hidden_layers: int = 5,
+                 alpha: float = 0.05,
+                 beta: float = 0.025,
+                 low_omega0: float = 0.1,
+                 high_omega0: float = 5.0, # Was 10.0
+                 sigma_mul: float = 1.0,
+                 rgb_mul: float = 1.0):
+        """
+        A NeRF model using a multi-scale wavelet backbone.
+        
+        Args:
+            point_dim: Dimensionality of spatial coordinates (usually 3).
+            dir_dim: Dimensionality of ray directions (usually 3).
+            num_freqs_dir: Number of frequency bands for ray direction encoding.
+            hidden_features: Number of filters/features in each wavelet layer.
+            hidden_layers: Number of wavelet layers in the backbone.
+            alpha, beta: Gamma distribution parameters for wavelet filters.
+            low_omega0, high_omega0: ω₀ values for low-frequency and high-frequency groups.
+            sigma_mul, rgb_mul: Multiplicative factors for density and color outputs.
+        """
+        super(MultiScaleWaveletNeRF, self).__init__()
+        self.num_freqs_dir = num_freqs_dir
+        self.sigma_mul = sigma_mul
+        self.rgb_mul = rgb_mul
+        
+        # Build the backbone from multiple MultiScaleWaveletFilter layers.
+        layers = []
+        in_dim = point_dim  # initial input is the raw 3D point
+        for i in range(hidden_layers):
+            layers.append(MultiScaleWaveletFilter(in_dim, hidden_features, alpha, beta, low_omega0, high_omega0))
+            in_dim = hidden_features  # update input dim for subsequent layers
+        self.backbone = nn.Sequential(*layers)
+        
+        # Density head: maps backbone features to a density scalar.
+        self.density_head = nn.Linear(hidden_features, 1)
+        
+        # Color head: combines backbone features with positional encodings of both points and ray directions.
+        # We encode directions using the same positional encoding function.
+        # For an input x, the encoding yields: x + [sin, cos, sin, cos, ...] → dimension: x_dim + 2*x_dim*num_freqs.
+        dir_encoding_dim = dir_dim + 2 * dir_dim * num_freqs_dir
+        
+        color_input_dim = hidden_features + dir_encoding_dim
+        
+        self.color_head = nn.Sequential(
+            nn.Linear(color_input_dim, hidden_features // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_features // 2, 3)
+        )
+        
+    def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass through the model.
+        
+        Args:
+            points: Tensor of shape (N, 3) containing 3D point coordinates.
+            rays_d: Tensor of shape (N, 3) containing ray directions.
+        
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: (RGB colors of shape (N, 3), density of shape (N,))
+        """
+        # Extract features using the backbone (multi-scale wavelet filters).
+        features = self.backbone(points)
+        # Density prediction: enforce non-negativity with ReLU and apply scaling.
+        density = torch.relu(self.density_head(features)) * self.sigma_mul
+        
+        # Positional encodings for points and ray directions.
+        rays_d_enc = positional_encoding(rays_d, self.num_freqs_dir)
+        
+        # Concatenate backbone features with both positional encodings.
+        rgb_input = torch.cat([features, rays_d_enc], dim=-1)
+        rgb = torch.sigmoid(self.color_head(rgb_input) * self.rgb_mul)
+        
+        return rgb, density.squeeze(-1)
+
+
+class WaveletNeRFLearnable(nn.Module):
+    """
+    NeRF model using multi-scale wavelet filters.
+    
+    This model keeps the same overall architecture as the original WaveletNeRFLearnable:
+      - A base MLP processes 3D points using stacked multi-scale wavelet layers.
+      - A density branch predicts volume density.
+      - A feature remapping branch and an RGB head combine backbone features with a positional encoding
+        of the ray directions.
+    
+    Args:
+        num_layers (int): Number of multi-scale wavelet layers in the base MLP.
+        hidden_dim (int): Hidden dimension of the MLP.
+        dir_encoding_dim (int): Number of frequency bands for ray direction encoding.
+        sigma_mul (float): Multiplicative factor for density output.
+        rgb_mul (float): Multiplicative factor for the RGB output.
+        alpha (float): Scaling parameter for initializing gamma (per filter) in the wavelet filters.
+        beta (float): Rate parameter for initializing gamma.
+        low_omega0 (float): ω₀ value for the low-frequency group.
+        high_omega0 (float): ω₀ value for the high-frequency group.
+    """
+    def __init__(
+        self,
+        num_layers: int = 8,
+        hidden_dim: int = 256,
+        dir_encoding_dim: int = 4,
+        sigma_mul: float = 1.0,
+        rgb_mul: float = 1.0,
+        alpha: float = 2.0,
+        beta: float = 1.0,
+        low_omega0: float = 0.1,
+        high_omega0: float = 10.0
+    ) -> None:
+        super(WaveletNeRFLearnable, self).__init__()
+        self.dir_encoding_dim = dir_encoding_dim
+        self.sigma_mul = sigma_mul
+        self.rgb_mul = rgb_mul
+        
+        # Base MLP: Process 3D points with a stack of multi-scale wavelet layers.
+        base_layers = [MultiScaleWaveletFilter(3, hidden_dim, alpha, beta, low_omega0, high_omega0)]
+        for _ in range(num_layers - 1):
+            base_layers.append(MultiScaleWaveletFilter(hidden_dim, hidden_dim, alpha, beta, low_omega0, high_omega0))
+        self.block1 = nn.Sequential(*base_layers)
+        
+        # Density branch: Maps backbone features to a scalar density.
+        self.density_branch = nn.Sequential(
+            nn.Linear(hidden_dim, 1)
+        )
+        
+        # Feature remapping: Prepares features for the RGB head.
+        self.feature_remap = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim)
+        )
+        
+        # RGB head: Combines remapped features with a positional encoding of ray directions.
+        ray_encoding_size = 6 * self.dir_encoding_dim + 3
+        self.rgb_head = nn.Sequential(
+            MultiScaleWaveletFilter(hidden_dim + ray_encoding_size, hidden_dim // 2, alpha, beta, low_omega0, high_omega0),
+            nn.Linear(hidden_dim // 2, 3)
+        )
+        
+    def forward(self, points: torch.Tensor, rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Process 3D points through the base MLP.
+        base = self.block1(points)
+        
+        # Compute density from backbone features.
+        sigma = self.density_branch(base)
+        density = torch.relu(sigma) * self.sigma_mul
+        
+        # Remap features.
+        features = self.feature_remap(base)
+        # Encode ray directions using positional encoding.
+        rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+        # Concatenate the remapped features with the encoded ray directions.
+        rgb_input = torch.cat((features, rays_d_enc), dim=-1)
+        # Compute RGB colors.
+        rgb = self.rgb_head(rgb_input)
+        rgb = torch.sigmoid_(rgb * self.rgb_mul)
         return rgb, density.squeeze(-1)

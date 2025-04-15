@@ -162,7 +162,8 @@ def render_nerf(
     num_samples: int = 256,
     device: str = 'cpu',
     white_background: bool = True,
-    chunk_size: int = 8192) -> Tensor:
+    chunk_size: int = 8192,
+    stratified: bool = True) -> Tensor:
     """
     Render rays with a NeRF model via volumetric integration.
 
@@ -180,6 +181,8 @@ def render_nerf(
         device (str, optional): Device on which to perform rendering.
         white_background (bool, optional): If True, composite over a white background.
         chunk_size (int, optional): Number of rays processed per chunk for memory efficiency.
+        stratified (bool, optional): If True, use stratified sampling (default), 
+                                     else use uniform sampling for validation.
 
     Returns:
         Tensor: A tensor of shape [num_rays, 3] containing the rendered RGB colors.
@@ -192,14 +195,28 @@ def render_nerf(
         rays_o_chunk = rays_o[i:i + chunk_size]
         rays_d_chunk = rays_d[i:i + chunk_size]
 
-        sample_positions, deltas = generate_sample_positions(
-            rays_o_chunk,
-            rays_d_chunk,
-            near,
-            far,
-            num_samples,
-            device
-        )
+        if stratified:
+            # Use the existing stratified sampling to generate sample positions and deltas.
+            sample_positions, deltas = generate_sample_positions(
+                rays_o_chunk,
+                rays_d_chunk,
+                near,
+                far,
+                num_samples,
+                device
+            )
+        else:
+            # Uniform sampling: generate evenly spaced sample positions between near and far.
+            samples = torch.linspace(near, far, num_samples, device=device)
+            # Compute intervals (deltas) between consecutive sample positions.
+            deltas = samples[1:] - samples[:-1]
+            delta_inf = torch.tensor([1e10], device=device, dtype=deltas.dtype)
+            deltas = torch.cat([deltas, delta_inf], dim=0)
+            # Compute the actual positions along the rays.
+            sample_positions = (
+                rays_o_chunk.unsqueeze(1)
+                + samples.unsqueeze(0).unsqueeze(-1) * rays_d_chunk.unsqueeze(1)
+            )
 
         sample_positions_flat = sample_positions.reshape(-1, 3)
         directions_flat = (
@@ -209,6 +226,7 @@ def render_nerf(
             .reshape(-1, 3)
         )
 
+        # Normalize positions and query the model to get colors and densities.
         colors_flat, densities_flat = query_model(
             model,
             sample_positions_flat,
@@ -220,6 +238,7 @@ def render_nerf(
         colors = colors_flat.reshape(rays_o_chunk.shape[0], num_samples, 3)
         densities = densities_flat.reshape(rays_o_chunk.shape[0], num_samples)
 
+        # Composite the colors using the computed weights from the densities.
         composed_rgb = composite_volume(colors, densities, deltas, white_background)
         rgb_out.append(composed_rgb)
 

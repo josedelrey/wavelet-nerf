@@ -10,7 +10,9 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from modules.data import load_dataset, compute_rays, RayDataset
-from modules.models import NeRF, Siren, WaveletMFNNeRFSimple, WaveletMFNNeRFSeparate
+from modules.models import NeRF, Siren
+from modules.models import WaveletMFNNeRFSimple, WaveletMFNNeRFSeparate, WaveletMFNNeRFPartial
+from modules.models import MultiScaleWaveletNeRF, WaveletNeRFLearnable
 from modules.rendering import render_nerf
 from modules.loss import mse_to_psnr
 from modules.utils import parse_config, format_elapsed_time
@@ -43,6 +45,7 @@ def main():
     num_random_rays = int(config.get('num_random_rays', 1024))
     chunk_size = int(config.get('chunk_size', 8192))
     num_samples = int(config.get('num_samples', 256))
+    num_samples_eval = int(config.get('num_samples_eval', 256))
 
     # Training parameters
     num_iters = int(config.get('num_iters', 150000))
@@ -105,6 +108,12 @@ def main():
         model = WaveletMFNNeRFSimple().to(device)
     elif model_type == 'separatewavelet':
         model = WaveletMFNNeRFSeparate().to(device)
+    elif model_type == 'partialwavelet':
+        model = WaveletMFNNeRFPartial().to(device)
+    elif model_type == 'multiscalewavelet':
+        model = MultiScaleWaveletNeRF().to(device)
+    elif model_type == 'learnablewavelet':
+        model = WaveletNeRFLearnable().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
 
@@ -217,10 +226,11 @@ def main():
                             rays_d_val,
                             near,
                             far,
-                            num_samples=num_samples,
+                            num_samples=num_samples_eval,
                             device=device,
                             white_background=True,
-                            chunk_size=chunk_size
+                            chunk_size=chunk_size,
+                            stratified=False
                         )
                     model.train()
                     

@@ -6,9 +6,10 @@ import imageio
 from tqdm import tqdm
 
 from modules.data import load_dataset, compute_rays
-from modules.models import NeRF, Siren
+from modules.models import NeRF, Siren, MultiScaleWaveletNeRF
 from modules.rendering import render_nerf
 from modules.utils import parse_config
+from modules.loss import mse_to_psnr
 
 
 def translate_by_t_along_z(t):
@@ -71,7 +72,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     near = float(config.get('near', 2.0))
     far = float(config.get('far', 6.0))
-    num_samples = int(config.get('num_samples', 256))
+    num_samples = int(config.get('num_samples_eval', 256))
     chunk_size = int(config.get('chunk_size', 8192))
     num_render_poses = int(config.get('num_render_poses', 40))
 
@@ -102,6 +103,8 @@ def main():
         model = NeRF().to(device)
     elif model_type == 'siren':
         model = Siren().to(device)
+    elif model_type == 'multiscalewavelet':
+        model = MultiScaleWaveletNeRF().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
     
@@ -118,14 +121,14 @@ def main():
         unit="frame",
         dynamic_ncols=True  # Adjusts width to terminal
     )
-
+        
+    model.eval()
     for i in render_loop:
         single_val_c2w = render_poses[i:i + 1]
         rays_o_val_np, rays_d_val_np, _ = compute_rays(single_val_image, single_val_c2w, focal_length)
         rays_o_val = torch.from_numpy(rays_o_val_np).float().to(device).squeeze(0)
         rays_d_val = torch.from_numpy(rays_d_val_np).float().to(device).squeeze(0)
-        
-        model.eval()
+
         torch.cuda.empty_cache()
         with torch.no_grad():
             pred_val_rgb = render_nerf(
@@ -137,9 +140,9 @@ def main():
                 num_samples=num_samples,
                 device=device,
                 white_background=True,
-                chunk_size=chunk_size
+                chunk_size=chunk_size,
+                stratified=False
             )
-        model.train()
         
         # Reshape to image
         H_val, W_val = single_val_image.shape[1:3]
