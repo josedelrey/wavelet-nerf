@@ -718,7 +718,11 @@ class MultiScaleWaveletNeRF(nn.Module):
         self.backbone = nn.Sequential(*layers)
         
         # Density head: maps backbone features to a density scalar.
-        self.density_head = nn.Linear(hidden_features, 1)
+        self.density_head = nn.Sequential(
+            nn.Linear(hidden_features, hidden_features // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_features // 2, 1)
+        )
         
         # Color head: combines backbone features with positional encodings of both points and ray directions.
         # We encode directions using the same positional encoding function.
