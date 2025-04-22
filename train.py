@@ -10,9 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from modules.data import load_dataset, compute_rays, RayDataset
-from modules.models import NeRF, Siren
-from modules.models import WaveletMFNNeRFSimple, WaveletMFNNeRFSeparate, WaveletMFNNeRFPartial
-from modules.models import MultiScaleWaveletNeRF, WaveletNeRFLearnable
+from modules.models import NeRF, Siren, MultiScaleWaveletNeRF
 from modules.rendering import render_nerf
 from modules.loss import mse_to_psnr
 from modules.utils import parse_config, format_elapsed_time
@@ -104,16 +102,8 @@ def main():
         model = NeRF().to(device)
     elif model_type == 'siren':
         model = Siren().to(device)
-    elif model_type == 'simplewavelet':
-        model = WaveletMFNNeRFSimple().to(device)
-    elif model_type == 'separatewavelet':
-        model = WaveletMFNNeRFSeparate().to(device)
-    elif model_type == 'partialwavelet':
-        model = WaveletMFNNeRFPartial().to(device)
     elif model_type == 'multiscalewavelet':
         model = MultiScaleWaveletNeRF().to(device)
-    elif model_type == 'learnablewavelet':
-        model = WaveletNeRFLearnable().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
 
