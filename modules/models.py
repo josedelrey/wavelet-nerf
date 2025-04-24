@@ -248,7 +248,7 @@ class WaveletFilter(nn.Module):
         ψ(u) = -e̶x̶p̶(̶-̶u̶²̶/̶2̶) * cos(ω₀ * u) - exp(-ω₀²/2)
         """
         return torch.cos(self.omega0 * u) - torch.exp(-0.5 * (self.omega0**2))
-    
+    3
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Compute squared Euclidean distance between x and each filter's center
         norm = (x ** 2).sum(dim=1).unsqueeze(-1) + (self.mu ** 2).sum(dim=1).unsqueeze(0) - 2 * x @ self.mu.T
@@ -295,23 +295,24 @@ class MultiScaleWaveletFilter(nn.Module):
 
 class MultiScaleWaveletNeRF(nn.Module):
     """
-    A NeRF backbone where *each* multi–scale Morlet wavelet filter
-    receives the raw 3‑D point coordinates, while the hidden feature
-    vector is propagated through separate linear layers — exactly
-    the scheme used in WaveletNet.
+    A NeRF backbone where each multi-scale Morlet wavelet filter
+    receives the raw 3‑D point coordinates, with additive residual
+    skips to preserve high-frequency detail.
     """
-    def __init__(self,
-                 point_dim: int = 3,
-                 dir_dim: int = 3,
-                 num_freqs_dir: int = 4,
-                 hidden_features: int = 512,
-                 hidden_layers: int = 5,
-                 alpha: float = 0.05,
-                 beta: float = 0.025,
-                 low_omega0: float = 0.1,
-                 high_omega0: float = 5.0,         # was 10.0
-                 sigma_mul: float = 1.0,
-                 rgb_mul: float = 1.0):
+    def __init__(
+        self,
+        point_dim: int = 3,
+        dir_dim: int = 3,
+        num_freqs_dir: int = 4,
+        hidden_features: int = 512,
+        hidden_layers: int = 5,
+        alpha: float = 0.05,
+        beta: float = 0.025,
+        low_omega0: float = 0.1,
+        high_omega0: float = 5.0,
+        sigma_mul: float = 1.0,
+        rgb_mul: float = 1.0
+    ):
         super().__init__()
 
         self.num_freqs_dir = num_freqs_dir
@@ -319,7 +320,7 @@ class MultiScaleWaveletNeRF(nn.Module):
         self.rgb_mul       = rgb_mul
         self.hidden_layers = hidden_layers
 
-        # ── 1. Wavelet filters: every layer sees the *same* 3‑D coords ──────────
+        # 1. Wavelet filters
         self.wavelet_filters = nn.ModuleList([
             MultiScaleWaveletFilter(point_dim,
                                     hidden_features,
@@ -328,8 +329,7 @@ class MultiScaleWaveletNeRF(nn.Module):
             for _ in range(hidden_layers)
         ])
 
-        # ── 2. Linear transforms for the hidden feature vector ────────────────
-        # (no linear map before the first layer: it is seeded directly)
+        # 2. Linear transforms for the hidden feature vector
         self.modulation_linears = nn.ModuleList([
             nn.Linear(hidden_features, hidden_features)
             for _ in range(hidden_layers - 1)
@@ -340,14 +340,20 @@ class MultiScaleWaveletNeRF(nn.Module):
                  np.sqrt(1.0 / hidden_features)
             )
 
-        # ── 3. Density (σ) head ───────────────────────────────────────────────
+        # Additive skip scales for each layer
+        self.skip_scales = nn.ParameterList([
+            nn.Parameter(torch.tensor(1.0))
+            for _ in range(hidden_layers - 1)
+        ])
+
+        # 3. Density (σ) head
         self.density_head = nn.Sequential(
             nn.Linear(hidden_features, hidden_features // 2),
             nn.ReLU(),
             nn.Linear(hidden_features // 2, 1)
         )
 
-        # ── 4. Colour (RGB) head ──────────────────────────────────────────────
+        # 4. Colour (RGB) head
         dir_enc_dim   = dir_dim + 2 * dir_dim * num_freqs_dir
         colour_in_dim = hidden_features + dir_enc_dim
         self.color_head = nn.Sequential(
@@ -356,25 +362,26 @@ class MultiScaleWaveletNeRF(nn.Module):
             nn.Linear(hidden_features // 2, 3)
         )
 
-    # -------------------------------------------------------------------------
     def forward(self, points: torch.Tensor, rays_d: torch.Tensor):
         """
         Args:
-            points : (N, 3)  –  3‑D points along the ray
-            rays_d : (N, 3)  –  corresponding ray directions
+            points : (N, 3)     3-D points along the ray
+            rays_d : (N, 3)     corresponding ray directions
         Returns:
-            rgb     : (N, 3)  –  per‑point colour
-            density : (N,)    –  per‑point volume density σ
+            rgb     : (N, 3)    per-point colour
+            density : (N,)      per-point volume density σ
         """
         # First layer: direct wavelet expansion of the coordinates
         z = self.wavelet_filters[0](points)
 
-        # Hidden layers: linear transform of previous z, modulated by
-        # a *new* wavelet response of the same coordinates
+        # Hidden layers with multiplicative modulation + additive skip
         for i in range(1, self.hidden_layers):
-            z = self.modulation_linears[i - 1](z) * self.wavelet_filters[i](points)
+            w_i = self.wavelet_filters[i](points)            # (N, D)
+            h_i = self.modulation_linears[i - 1](z)          # (N, D)
+            # Modulate and then add residual skip
+            z = h_i * w_i + self.skip_scales[i - 1] * w_i   # (N, D)
 
-        # Density head (non‑negative with relu), scaled by sigma_mul
+        # Density head (non-negative with relu), scaled by sigma_mul
         density = torch.relu(self.density_head(z)) * self.sigma_mul
 
         # Directional encoding → colour head
