@@ -1,8 +1,65 @@
 TODO:
-- Train both simple MFN and separate MFN and compare results.
+- Make it so logs are merged when resuming training and not split.
+- Organize trained models and make here a list of experiment identificators.
 
-Results:
-- Simple Wavelet MFN:
-- Separate Wavelet MFN: 17 db
-- Partial Wavelet MFN: 
-- multiscale Wavelet MFN: 24.5 db
+Experiments:
+- multiscalewavelet_1:
+    # =============================================================================
+    # NeRF Configuration File for Lego Dataset
+    # =============================================================================
+
+    # --------------------
+    # Dataset Parameters
+    # --------------------
+    dataset_path = ./datasets/lego     # Directory containing the dataset
+
+    # --------------------
+    # Sampling Parameters
+    # --------------------
+    num_random_rays = 512              # Number of random rays sampled per iteration
+    chunk_size = 1024                  # Number of rays processed in a single rendering batch
+    num_samples = 128                  # Number of samples along each ray
+
+    # --------------------
+    # Training Parameters
+    # --------------------
+    num_iters = 300000                 # Total number of training iterations
+    learning_rate = 5e-4               # Starting learning rate for the optimizer
+    near = 2.0                         # Near bound for ray sampling
+    far = 6.0                          # Far bound for ray sampling
+
+    # --------------------
+    # Model Saving Parameters
+    # --------------------
+    save_path = ./models/multiscalewavelet       # Directory to save trained models
+    save_interval = 5000                         # Interval (in iterations) for saving model checkpoints
+
+    # --------------------
+    # Learning Rate Decay Parameters
+    # --------------------
+    lr_decay = 300                     # Number of 1000-step intervals for decay
+    lr_decay_factor = 0.2              # Factor to multiply the learning rate at decay
+    lr_min = 1e-4                      # Minimum learning rate possible
+
+    # --------------------
+    # Monitoring Parameters
+    # --------------------
+    log_interval = 50                  # Interval (in iterations) for logging training metrics
+    val_interval = 50000               # Interval (in iterations) for running validation
+
+    # --------------------
+    # Monitoring Parameters
+    # --------------------
+    first_step_render = false          # First step validation render flag
+
+    # --------------------
+    # Model Type
+    # --------------------
+    model_type = multiscalewavelet
+
+    # --------------------
+    # Evaluation Render Parameters
+    # --------------------
+    num_render_poses = 40              # Number of frames of the evaluation video
+    num_samples_eval = 256             # Number of samples per ray for evaluation
+

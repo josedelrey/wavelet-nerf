@@ -134,7 +134,7 @@ def main():
     )
 
     # TensorBoard writer
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     log_dir = f"./logs/{model_type}_{os.path.basename(dataset_path)}_{timestamp}"
     os.makedirs(log_dir, exist_ok=True)
     writer = SummaryWriter(log_dir=log_dir)

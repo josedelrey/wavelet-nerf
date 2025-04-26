@@ -16,3 +16,9 @@ __pycache__/
 
 # Ignore rendered frames directory
 rendered_frames/
+
+# Ignore notes
+notes.txt
+
+# Ignore experiments markdown file
+experiments.md

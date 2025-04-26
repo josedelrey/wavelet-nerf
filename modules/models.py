@@ -280,7 +280,7 @@ class MultiScaleWaveletFilter(nn.Module):
         """
         super(MultiScaleWaveletFilter, self).__init__()
         # Split filters into low and high frequency groups.
-        low_dim = out_dim // 2
+        low_dim = int(0.2 * out_dim)
         high_dim = out_dim - low_dim
 
         self.low_wavelet = WaveletFilter(in_dim, low_dim, alpha, beta, omega0=low_omega0)
@@ -308,8 +308,8 @@ class MultiScaleWaveletNeRF(nn.Module):
         hidden_layers: int = 5,
         alpha: float = 0.05,
         beta: float = 0.025,
-        low_omega0: float = 0.1,
-        high_omega0: float = 5.0,
+        low_omega0: float = 5.0,
+        high_omega0: float = 7.0,
         sigma_mul: float = 1.0,
         rgb_mul: float = 1.0
     ):
