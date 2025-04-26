@@ -47,7 +47,7 @@ def format_elapsed_time(start_time: datetime.datetime) -> str:
     )
 
 
-def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type):
+def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, experiment_name):
     """
     Save the training checkpoint.
     """
@@ -58,7 +58,7 @@ def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type):
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict()
     }
-    model_filename = os.path.join(save_path, f"{model_type}_model_{step:06d}.pth")
+    model_filename = os.path.join(save_path, f"{experiment_name}_{step:06d}.pth")
     torch.save(checkpoint_dict, model_filename)
     return model_filename
 

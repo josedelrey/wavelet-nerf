@@ -23,10 +23,16 @@ near = 2.0                         # Near bound for ray sampling
 far = 6.0                          # Far bound for ray sampling
 
 # --------------------
+# Log Parameters
+# --------------------
+log_root = ./logs                            # Name of the root logs folder
+experiment_name = multiscalewavelet_2        # Name of this experiment's log subfolder
+
+# --------------------
 # Model Saving Parameters
 # --------------------
-save_path = ./models/multiscalewavelet       # Directory to save trained models
-save_interval = 5000                         # Interval (in iterations) for saving model checkpoints
+save_root = ./models               # Directory to save trained models
+save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
 # --------------------
 # Learning Rate Decay Parameters

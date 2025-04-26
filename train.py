@@ -51,8 +51,18 @@ def main():
     near = float(config.get('near', 2.0))
     far = float(config.get('far', 6.0))
 
+    # Log parameters
+    log_root = config.get('log_root', './logs')
+    os.makedirs(log_root, exist_ok=True)
+    experiment_name = config.get('experiment_name')
+    if not experiment_name:
+        raise ValueError("Config must define an 'experiment_name' field")
+    log_dir = os.path.join(log_root, experiment_name)
+    os.makedirs(log_dir, exist_ok=True)
+
     # Model saving parameters
-    save_path = config.get('save_path', './models')
+    save_root = config.get('save_path', './models')
+    save_path = os.path.join(save_root, experiment_name)
     save_interval = int(config.get('save_interval', 5000))
     os.makedirs(save_path, exist_ok=True)
 
@@ -64,12 +74,26 @@ def main():
     # First step render flag
     first_step_render = config.get('first_step_render', 'False').lower() == 'true'
 
-    # Model type
+    # Resume training from checkpoint if specified
     if args.resume is not None:
         checkpoint_temp = torch.load(args.resume, map_location='cpu', weights_only=True)
         model_type = checkpoint_temp.get('model_type', config.get('model_type', 'NeRF')).lower()
         print(f"Resuming training with model type from checkpoint: {model_type}")
     else:
+        existing_logs  = os.listdir(log_dir)
+        existing_ckpts = os.listdir(save_path)
+        if existing_logs or existing_ckpts:
+            print(f"WARNING: Experiment '{experiment_name}' already contains data:")
+            if existing_logs:
+                print(f"  • {len(existing_logs)} files in log directory: {log_dir}")
+            if existing_ckpts:
+                print(f"  • {len(existing_ckpts)} files in checkpoint directory: {save_path}")
+            print("Starting a new run will append logs and may overwrite old checkpoints.")
+            confirm = input("Continue and overwrite existing data? [y/N]: ")
+            if confirm.lower() != 'y':
+                print("Aborting.")
+                exit(0)
+
         model_type = config.get('model_type', 'NeRF').lower()
 
     # Monitoring parameters
@@ -94,6 +118,7 @@ def main():
     print(f"Log interval: {log_interval}")
     print(f"Validation interval: {val_interval}")
     print(f"Model type: {model_type}")
+    print(f"Log directory: {log_dir}")
     print("==========================================")
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -134,13 +159,7 @@ def main():
     )
 
     # TensorBoard writer
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
-    log_dir = f"./logs/{model_type}_{os.path.basename(dataset_path)}_{timestamp}"
-    os.makedirs(log_dir, exist_ok=True)
-    writer = SummaryWriter(log_dir=log_dir)
-    writer.add_text('config', str(config))
-
-    # Resume training from checkpoint
+    writer_kwargs = {'log_dir': log_dir}
     start_iter = 0
     start_time = datetime.datetime.now()
     if args.resume is not None:
@@ -150,6 +169,9 @@ def main():
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         start_iter = checkpoint['step']
         print(f"Resuming training from iteration {start_iter}")
+        writer_kwargs['purge_step'] = start_iter
+    writer = SummaryWriter(**writer_kwargs)
+    writer.add_text('config', str(config))
 
     # Training loop
     try:
@@ -191,7 +213,13 @@ def main():
 
                 # Save checkpoint
                 if step % save_interval == 0 and step > 0 and step < num_iters - 1:
-                    model_filename = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
+                    model_filename = save_checkpoint(step, 
+                                                     model, 
+                                                     optimizer, 
+                                                     scheduler, 
+                                                     save_path, 
+                                                     model_type,
+                                                     experiment_name)
                     elapsed_str = format_elapsed_time(start_time)
                     tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
@@ -250,7 +278,13 @@ def main():
                 pbar.update(1)
 
             # Save final model after training is complete
-            final_model_path = save_checkpoint(num_iters, model, optimizer, scheduler, save_path, model_type)
+            final_model_path = save_checkpoint(num_iters, 
+                                               model, 
+                                               optimizer, 
+                                               scheduler, 
+                                               save_path, 
+                                               model_type,
+                                               experiment_name)
             elapsed_str = format_elapsed_time(start_time)
             tqdm.write(f"[{elapsed_str}] Training complete!")
             tqdm.write(f"[{elapsed_str}] Final model saved to {final_model_path}")
@@ -259,7 +293,13 @@ def main():
         # Save checkpoint on keyboard interrupt
         elapsed_str = format_elapsed_time(start_time)
         tqdm.write(f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint...")
-        interrupt_checkpoint_path = save_checkpoint(step, model, optimizer, scheduler, save_path, model_type)
+        interrupt_checkpoint_path = save_checkpoint(step, 
+                                                    model, 
+                                                    optimizer, 
+                                                    scheduler, 
+                                                    save_path, 
+                                                    model_type,
+                                                    experiment_name)
         tqdm.write(f"[{elapsed_str}] Checkpoint saved to {interrupt_checkpoint_path}. Exiting training.")
 
 
