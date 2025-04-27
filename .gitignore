@@ -7,10 +7,6 @@ datasets/
 # Ignore the models directory
 models/
 
-# Ignore note files
-output_command.txt
-output_file.txt
-
 # Ignore python cache files
 __pycache__/
 
@@ -22,3 +18,6 @@ notes.txt
 
 # Ignore experiments markdown file
 experiments.md
+
+# Ignore auxiliary scripts
+aux_scripts/

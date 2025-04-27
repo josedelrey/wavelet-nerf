@@ -121,8 +121,11 @@ def main():
     print(f"Log directory: {log_dir}")
     print("==========================================")
 
+    # Set device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {torch.cuda.get_device_name(0) if device == 'cuda' else 'CPU'}")
+
+    # Load the model
     if model_type == 'nerf':
         model = NeRF().to(device)
     elif model_type == 'siren':
@@ -148,6 +151,7 @@ def main():
     data_loader = DataLoader(dataset, batch_size=num_random_rays, shuffle=True)
     loader_iter = iter(data_loader)
 
+    # Set up the optimizer and loss function
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     mse_loss = nn.MSELoss()
 
@@ -225,7 +229,7 @@ def main():
 
                 # Log validation metrics
                 if step % val_interval == 0 and (step > 0 or first_step_render):
-                    # Select a random image and render it
+                    # Select a random image and render it for validation
                     test_image_index = np.random.randint(N_val)
                     single_val_image = images_val_np[test_image_index:test_image_index+1]
                     single_val_c2w = c2w_val_np[test_image_index:test_image_index+1]
@@ -275,6 +279,7 @@ def main():
                     tqdm.write(f"Validation Debug: Logging complete for iteration {step}.")
                     tqdm.write(f"[Validation Step] Iter {step}  PSNR: {val_psnr:.2f}")
 
+                # Update progress bar
                 pbar.update(1)
 
             # Save final model after training is complete

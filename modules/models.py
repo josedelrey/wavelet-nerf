@@ -305,7 +305,7 @@ class MultiScaleWaveletNeRF(nn.Module):
         dir_dim: int = 3,
         num_freqs_dir: int = 4,
         hidden_features: int = 256,
-        hidden_layers: int = 4,
+        hidden_layers: int = 9,
         alpha: float = 0.05,
         beta: float = 0.025,
         low_omega0: float = 5.0,

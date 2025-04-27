@@ -9,37 +9,7 @@ from modules.data import load_dataset, compute_rays
 from modules.models import NeRF, Siren, MultiScaleWaveletNeRF
 from modules.rendering import render_nerf
 from modules.utils import parse_config
-from modules.loss import mse_to_psnr
-
-
-def translate_by_t_along_z(t):
-    tform = np.eye(4).astype(np.float32)
-    tform[2][3] = t
-    return tform
-
-
-def rotate_by_phi_along_x(phi):
-    tform = np.eye(4).astype(np.float32)
-    tform[1, 1] = tform[2, 2] = np.cos(phi)
-    tform[1, 2] = -np.sin(phi)
-    tform[2, 1] = -tform[1, 2]
-    return tform
-
-
-def rotate_by_theta_along_y(theta):
-    tform = np.eye(4).astype(np.float32)
-    tform[0, 0] = tform[2, 2] = np.cos(theta)
-    tform[0, 2] = -np.sin(theta)
-    tform[2, 0] = -tform[0, 2]
-    return tform
-
-
-def pose_spherical(theta, phi, radius):
-    c2w = translate_by_t_along_z(radius)
-    c2w = rotate_by_phi_along_x(phi / 180.0 * np.pi) @ c2w
-    c2w = rotate_by_theta_along_y(theta / 180 * np.pi) @ c2w
-    c2w = np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) @ c2w
-    return c2w
+from modules.camera import pose_spherical
 
 
 def main():
@@ -97,8 +67,11 @@ def main():
         0,
     )
 
+    # Set device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {torch.cuda.get_device_name(0) if device == 'cuda' else 'CPU'}")
+
+    # Load the model
     if model_type == 'nerf':
         model = NeRF().to(device)
     elif model_type == 'siren':
@@ -108,9 +81,11 @@ def main():
     else:
         raise ValueError(f"Invalid model type: {model_type}")
     
+    # Load the model checkpoint
     checkpoint = torch.load(model_path, map_location='cpu', weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'])
     
+    # Load a dummy image to get height and width
     images_val_np, _, focal_length = load_dataset(dataset_path, mode='test', single_image=True)
     single_val_image = images_val_np[0:1]
 
@@ -119,9 +94,10 @@ def main():
         range(render_poses.shape[0]),
         desc="Rendering frames",
         unit="frame",
-        dynamic_ncols=True  # Adjusts width to terminal
+        dynamic_ncols=True
     )
         
+    # Render the images
     model.eval()
     for i in render_loop:
         single_val_c2w = render_poses[i:i + 1]
