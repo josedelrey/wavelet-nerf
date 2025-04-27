@@ -18,11 +18,15 @@ from modules.utils import save_checkpoint, log_training_metrics
 
 
 def main():
-    # Set seed for reproducibility
+    # Device configuration
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
+
+    # Reproducibility
     seed = 42
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
+    if device.type == 'cuda':
         torch.cuda.manual_seed_all(seed)
 
     # Parse command line arguments
@@ -121,10 +125,6 @@ def main():
     print(f"Log directory: {log_dir}")
     print("==========================================")
 
-    # Set device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {torch.cuda.get_device_name(0) if device == 'cuda' else 'CPU'}")
-
     # Load the model
     if model_type == 'nerf':
         model = NeRF().to(device)
@@ -148,7 +148,7 @@ def main():
 
     # Create the dataset and DataLoader
     dataset = RayDataset(rays_o, rays_d, target_pixels)
-    data_loader = DataLoader(dataset, batch_size=num_random_rays, shuffle=True)
+    data_loader = DataLoader(dataset, batch_size=num_random_rays, shuffle=True, pin_memory=(device.type == 'cuda'))
     loader_iter = iter(data_loader)
 
     # Set up the optimizer and loss function
@@ -240,7 +240,8 @@ def main():
                     tqdm.write("Rendering validation image...")
                     
                     model.eval()
-                    torch.cuda.empty_cache()
+                    if device.type == 'cuda':
+                        torch.cuda.empty_cache()
                     with torch.no_grad():
                         pred_val_rgb = render_nerf(
                             model,

@@ -13,11 +13,15 @@ from modules.camera import pose_spherical
 
 
 def main():
-    # Set seed for reproducibility
+    # Device configuration
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
+
+    # Reproducibility
     seed = 42
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available():
+    if device.type == 'cuda':
         torch.cuda.manual_seed_all(seed)
 
     # Parse command line arguments
@@ -66,10 +70,6 @@ def main():
         ],
         0,
     )
-
-    # Set device
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {torch.cuda.get_device_name(0) if device == 'cuda' else 'CPU'}")
 
     # Load the model
     if model_type == 'nerf':

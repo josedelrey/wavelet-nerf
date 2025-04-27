@@ -296,7 +296,7 @@ class MultiScaleWaveletFilter(nn.Module):
 class MultiScaleWaveletNeRF(nn.Module):
     """
     A NeRF backbone where each multi-scale Morlet wavelet filter
-    receives the raw 3‑D point coordinates, with additive residual
+    receives the raw 3D point coordinates, with additive residual
     skips to preserve high-frequency detail.
     """
     def __init__(
@@ -309,15 +309,11 @@ class MultiScaleWaveletNeRF(nn.Module):
         alpha: float = 0.05,
         beta: float = 0.025,
         low_omega0: float = 5.0,
-        high_omega0: float = 7.0,
-        sigma_mul: float = 1.0,
-        rgb_mul: float = 1.0
+        high_omega0: float = 7.0
     ):
         super().__init__()
 
         self.num_freqs_dir = num_freqs_dir
-        self.sigma_mul     = sigma_mul
-        self.rgb_mul       = rgb_mul
         self.hidden_layers = hidden_layers
 
         # 1. Wavelet filters
@@ -381,12 +377,12 @@ class MultiScaleWaveletNeRF(nn.Module):
             # Modulate and then add residual skip
             z = h_i * w_i + self.skip_scales[i - 1] * w_i   # (N, D)
 
-        # Density head (non-negative with relu), scaled by sigma_mul
-        density = torch.relu(self.density_head(z)) * self.sigma_mul
+        # Density head (non-negative with relu)
+        density = torch.relu(self.density_head(z))
 
         # Directional encoding → colour head
         rays_d_enc = positional_encoding(rays_d, self.num_freqs_dir)
         rgb_input  = torch.cat([z, rays_d_enc], dim=-1)
-        rgb        = torch.sigmoid(self.color_head(rgb_input) * self.rgb_mul)
+        rgb        = torch.sigmoid(self.color_head(rgb_input))
 
         return rgb, density.squeeze(-1)
