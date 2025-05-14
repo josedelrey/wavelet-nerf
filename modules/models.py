@@ -204,185 +204,258 @@ class Siren(nn.Module):
         return rgb, density.squeeze(-1)
 
 
-class WaveletFilter(nn.Module):
+class MFNBase(nn.Module):
     """
-    A Morlet wavelet filter module used for feature extraction.
-
-    This layer applies a set of learnable Morlet wavelet filters to the input tensor.
-    The filters are parameterized by learned means (mu) and gamma values, similar to
-    the Gabor filter. Instead of using a sine nonlinearity, it uses a Morlet wavelet
-    function:
+    MFNBase: Multiplicative filter network base class.
     
-        ψ(u) = -e̶x̶p̶(̶-̶u̶²̶/̶2̶) * cos(ω₀ * u) - exp(-ω₀²/2)
-    
-    where ω₀ is a learnable frequency parameter.
-    
-    Args:
-        in_dim (int): Number of input features.
-        out_dim (int): Number of output features.
-        alpha (float): A scaling factor for the gamma distribution.
-        beta (float, optional): The rate parameter for the Gamma distribution.
-        omega0 (float): Initial frequency parameter for the Morlet wavelet.
-    """
-    def __init__(self, in_dim: int, out_dim: int, alpha: float, beta: float = 1.0, omega0: float = 5.0) -> None:
-        super(WaveletFilter, self).__init__()
-        # Learned centers for each filter
-        self.mu = nn.Parameter(torch.rand((out_dim, in_dim)) * 2 - 1)
-        # Learned gamma values controlling the Gaussian envelope width
-        self.gamma = nn.Parameter(torch.distributions.gamma.Gamma(alpha, beta).sample((out_dim,)))
-        # Linear projection to generate the argument for the wavelet nonlinearity
-        self.linear = nn.Linear(in_dim, out_dim)
-        # Learnable frequency parameter for the Morlet wavelet
-        self.omega0 = nn.Parameter(torch.tensor(omega0))
-        self.init_weights()
-    
-    def init_weights(self) -> None:
-        # Scale the weights based on gamma (similar to GaborFilter)
-        self.linear.weight.data *= 128. * torch.sqrt(self.gamma.unsqueeze(-1))
-        self.linear.bias.data.uniform_(-np.pi, np.pi)
-    
-    def morlet_wavelet(self, u: torch.Tensor) -> torch.Tensor:
-        """
-        Applies the Morlet wavelet nonlinearity to the input u.
-        
-        ψ(u) = -e̶x̶p̶(̶-̶u̶²̶/̶2̶) * cos(ω₀ * u) - exp(-ω₀²/2)
-        """
-        return torch.cos(self.omega0 * u) - torch.exp(-0.5 * (self.omega0**2))
-    3
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Compute squared Euclidean distance between x and each filter's center
-        norm = (x ** 2).sum(dim=1).unsqueeze(-1) + (self.mu ** 2).sum(dim=1).unsqueeze(0) - 2 * x @ self.mu.T
-        # Gaussian envelope based on the learned gamma values
-        envelope = torch.exp(- self.gamma.unsqueeze(0) / 2. * norm)
-        # Linear projection of x
-        lin_out = self.linear(x)
-        # Apply the Morlet wavelet nonlinearity
-        wavelet_response = self.morlet_wavelet(lin_out)
-        # Return the modulated response
-        return envelope * wavelet_response
+    This is the original implementation from "Multiplicative Filter Networks"
+    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021). 
+    See: https://github.com/boschresearch/multiplicative-filter-networks/
 
-
-class MultiScaleWaveletFilter(nn.Module):
-    def __init__(self, in_dim: int, out_dim: int, alpha: float, beta: float = 1.0,
-                 low_omega0: float = 2.0, high_omega0: float = 10.0) -> None:
-        """
-        Splits filters into two groups:
-          - One group uses a low ω₀ for low-frequency (broader Gaussian) responses.
-          - The other group uses a high ω₀ for high-frequency (narrower Gaussian) responses.
-        The outputs of both groups are concatenated along the feature dimension.
-        
-        Args:
-            in_dim: Dimensionality of the input.
-            out_dim: Total number of filters.
-            alpha, beta: Parameters for the gamma distribution.
-            low_omega0: Frequency parameter for the low-frequency group.
-            high_omega0: Frequency parameter for the high-frequency group.
-        """
-        super(MultiScaleWaveletFilter, self).__init__()
-        # Split filters into low and high frequency groups.
-        low_dim = int(0.2 * out_dim)
-        high_dim = out_dim - low_dim
-
-        self.low_wavelet = WaveletFilter(in_dim, low_dim, alpha, beta, omega0=low_omega0)
-        self.high_wavelet = WaveletFilter(in_dim, high_dim, alpha, beta, omega0=high_omega0)
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        low_response = self.low_wavelet(x)
-        high_response = self.high_wavelet(x)
-        # Concatenate features along the last dimension.
-        return torch.cat([low_response, high_response], dim=-1)
-
-
-class MultiScaleWaveletNeRF(nn.Module):
-    """
-    A NeRF backbone where each multi-scale Morlet wavelet filter
-    receives the raw 3D point coordinates, with additive residual
-    skips to preserve high-frequency detail.
+    Expects the child class to define the 'filters' attribute, which should be 
+    a nn.ModuleList of n_layers+1 filters with output equal to hidden_size.
     """
     def __init__(
-        self,
-        point_dim: int = 3,
-        dir_dim: int = 3,
-        num_freqs_dir: int = 4,
-        hidden_features: int = 256,
-        hidden_layers: int = 9,
-        alpha: float = 0.05,
-        beta: float = 0.025,
-        low_omega0: float = 5.0,
-        high_omega0: float = 7.0
+        self, hidden_size, out_size, n_layers, weight_scale, bias=True, output_act=False
     ):
         super().__init__()
 
-        self.num_freqs_dir = num_freqs_dir
-        self.hidden_layers = hidden_layers
+        self.linear = nn.ModuleList(
+            [nn.Linear(hidden_size, hidden_size, bias) for _ in range(n_layers)]
+        )
+        self.output_linear = nn.Linear(hidden_size, out_size)
+        self.output_act = output_act
 
-        # 1. Wavelet filters
-        self.wavelet_filters = nn.ModuleList([
-            MultiScaleWaveletFilter(point_dim,
-                                    hidden_features,
-                                    alpha, beta,
-                                    low_omega0, high_omega0)
-            for _ in range(hidden_layers)
-        ])
-
-        # 2. Linear transforms for the hidden feature vector
-        self.modulation_linears = nn.ModuleList([
-            nn.Linear(hidden_features, hidden_features)
-            for _ in range(hidden_layers - 1)
-        ])
-        for lin in self.modulation_linears:
+        for lin in self.linear:
             lin.weight.data.uniform_(
-                -np.sqrt(1.0 / hidden_features),
-                 np.sqrt(1.0 / hidden_features)
+                -np.sqrt(weight_scale / hidden_size),
+                np.sqrt(weight_scale / hidden_size),
             )
 
-        # Additive skip scales for each layer
-        self.skip_scales = nn.ParameterList([
-            nn.Parameter(torch.tensor(1.0))
-            for _ in range(hidden_layers - 1)
-        ])
+        return
 
-        # 3. Density (σ) head
-        self.density_head = nn.Sequential(
-            nn.Linear(hidden_features, hidden_features // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_features // 2, 1)
+    def forward(self, x):
+        out = self.filters[0](x)
+        for i in range(1, len(self.filters)):
+            out = self.filters[i](x) * self.linear[i - 1](out)
+        out = self.output_linear(out)
+
+        if self.output_act:
+            out = torch.sin(out)
+
+        return out
+    
+
+class WaveletLayer(nn.Module):
+    """
+    GaborLayer: Gabor-like filter as used in GaborNet.
+    
+    This is the original implementation from "Multiplicative Filter Networks"
+    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021). 
+    See: https://github.com/boschresearch/multiplicative-filter-networks/
+    """
+    def __init__(self, in_features, out_features, weight_scale, alpha=1.0, beta=1.0, omega0=5.0):
+        super().__init__()
+        self.linear = nn.Linear(in_features, out_features)
+        self.mu = nn.Parameter(2 * torch.rand(out_features, in_features) - 1)
+        self.gamma = nn.Parameter(
+            torch.distributions.gamma.Gamma(alpha, beta).sample((out_features,))
+        )
+        self.omega0 = omega0
+        self.linear.weight.data *= weight_scale * torch.sqrt(self.gamma[:, None])
+        self.linear.bias.data.uniform_(-np.pi, np.pi)
+        return
+
+    def forward(self, x):
+        D = (
+            (x ** 2).sum(-1)[..., None]
+            + (self.mu ** 2).sum(-1)[None, :]
+            - 2 * x @ self.mu.T
+        )
+        return torch.sin(self.linear(self.omega0 * x)) * torch.exp(-0.5 * D * self.gamma[None, :])
+
+
+class WaveletNet(MFNBase):
+    """
+    GaborNet: Network using GaborLayer filters.
+    
+    This is the original implementation from "Multiplicative Filter Networks"
+    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021).
+    See: https://github.com/boschresearch/multiplicative-filter-networks/
+    """
+    def __init__(
+        self,
+        in_features,
+        hidden_features,
+        out_features,
+        hidden_layers=3,
+        input_scale=256.0,
+        weight_scale=1.0,
+        alpha=6.0,
+        beta=1.0,
+        omega0=5.0,
+        bias=True,
+        output_act=False,
+    ):
+        super().__init__(
+            hidden_features, out_features, hidden_layers, weight_scale, bias, output_act
+        )
+        self.filters = nn.ModuleList(
+            [
+                WaveletLayer(
+                    in_features,
+                    hidden_features,
+                    input_scale / np.sqrt(hidden_layers + 1),
+                    alpha / (hidden_layers + 1),
+                    beta,
+                    omega0
+                )
+                for _ in range(hidden_layers + 1)
+            ]
         )
 
-        # 4. Colour (RGB) head
-        dir_enc_dim   = dir_dim + 2 * dir_dim * num_freqs_dir
-        colour_in_dim = hidden_features + dir_enc_dim
-        self.color_head = nn.Sequential(
-            nn.Linear(colour_in_dim, hidden_features // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_features // 2, 3)
+
+class MFNBase(nn.Module):
+    """
+    MFNBase: Multiplicative filter network base class.
+    
+    This is the original implementation from "Multiplicative Filter Networks"
+    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021). 
+    See: https://github.com/boschresearch/multiplicative-filter-networks/
+
+    Expects the child class to define the 'filters' attribute, which should be 
+    a nn.ModuleList of n_layers+1 filters with output equal to hidden_size.
+    """
+    def __init__(
+        self, hidden_size, out_size, n_layers, weight_scale, bias=True, output_act=False
+    ):
+        super().__init__()
+
+        self.linear = nn.ModuleList(
+            [nn.Linear(hidden_size, hidden_size, bias) for _ in range(n_layers)]
+        )
+        self.output_linear = nn.Linear(hidden_size, out_size)
+        self.output_act = output_act
+
+        for lin in self.linear:
+            lin.weight.data.uniform_(
+                -np.sqrt(weight_scale / hidden_size),
+                np.sqrt(weight_scale / hidden_size),
+            )
+
+        return
+
+    def forward(self, x):
+        out = self.filters[0](x)
+        for i in range(1, len(self.filters)):
+            out = self.filters[i](x) * self.linear[i - 1](out)
+        out = self.output_linear(out)
+
+        if self.output_act:
+            out = torch.sin(out)
+
+        return out
+
+
+class WaveletNeRF(nn.Module):
+    """
+    NeRF-style model using a WaveletNet base and wavelet layers for RGB head.
+
+    Args:
+        in_features (int): Dimensionality of input points (default 3).
+        hidden_dim (int): Hidden dimension for the base and branches.
+        num_layers (int): Number of wavelet layers in the base.
+        dir_encoding_dim (int): Number of frequencies for ray direction encoding.
+        sigma_mul (float): Multiplicative factor on density output.
+        rgb_mul (float): Multiplicative factor on RGB output before sigmoid.
+        input_scale (float): Scaling factor for WaveletNet input.
+        weight_scale (float): Base weight scale for wavelet filters.
+        alpha (float): Alpha parameter for gamma distribution in WaveletLayers.
+        beta (float): Beta parameter for gamma distribution in WaveletLayers.
+        omega0 (float): Frequency scaling for WaveletLayer.
+    """
+    def __init__(
+        self,
+        in_features: int = 3,
+        hidden_dim: int = 256,
+        num_layers: int = 8,
+        dir_encoding_dim: int = 4,
+        sigma_mul: float = 10.0,
+        rgb_mul: float = 1.0,
+        input_scale: float = 256.0,
+        weight_scale: float = 1.0,
+        alpha: float = 6.0,
+        beta: float = 1.0,
+        omega0: float = 5.0,
+    ) -> None:
+        super().__init__()
+        self.dir_encoding_dim = dir_encoding_dim
+        self.sigma_mul = sigma_mul
+        self.rgb_mul = rgb_mul
+
+        # Base MLP: WaveletNet processes 3D points
+        self.base_net = WaveletNet(
+            in_features=in_features,
+            hidden_features=hidden_dim,
+            out_features=hidden_dim,
+            hidden_layers=num_layers,
+            input_scale=input_scale,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+            output_act=False,
         )
 
-    def forward(self, points: torch.Tensor, rays_d: torch.Tensor):
+        # Density branch: simple linear from base features
+        self.density_branch = nn.Linear(hidden_dim, 1)
+
+        # Feature remapping for RGB head
+        self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
+
+        # Compute size of direction encoding
+        ray_enc_size = dir_encoding_dim * 6 + in_features
+
+        # RGB head: WaveletLayer followed by linear
+        self.rgb_filter = WaveletLayer(
+            in_features=hidden_dim + ray_enc_size,
+            out_features=hidden_dim // 2,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+        )
+        self.rgb_out = nn.Linear(hidden_dim // 2, 3)
+
+    def forward(
+        self,
+        points: torch.Tensor,
+        rays_d: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
-            points : (N, 3)     3-D points along the ray
-            rays_d : (N, 3)     corresponding ray directions
+            points: (N, 3) 3D sample points.
+            rays_d: (N, 3) Corresponding ray directions.
+
         Returns:
-            rgb     : (N, 3)    per-point colour
-            density : (N,)      per-point volume density σ
+            rgb: (N, 3) Color values in [0,1].
+            density: (N,) Density ("sigma") values.
         """
-        # First layer: direct wavelet expansion of the coordinates
-        z = self.wavelet_filters[0](points)
+        # Base features from WaveletNet
+        base_feats = self.base_net(points)
 
-        # Hidden layers with multiplicative modulation + additive skip
-        for i in range(1, self.hidden_layers):
-            w_i = self.wavelet_filters[i](points)            # (N, D)
-            h_i = self.modulation_linears[i - 1](z)          # (N, D)
-            # Modulate and then add residual skip
-            z = h_i * w_i + self.skip_scales[i - 1] * w_i   # (N, D)
+        # Density output
+        raw_sigma = self.density_branch(base_feats)
+        density = torch.relu(raw_sigma.squeeze(-1)) * self.sigma_mul
 
-        # Density head (non-negative with relu)
-        density = torch.relu(self.density_head(z))
+        # Prepare features for RGB head
+        remapped = self.feature_remap(base_feats)
+        dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+        rgb_input = torch.cat([remapped, dir_enc], dim=-1)
 
-        # Directional encoding → colour head
-        rays_d_enc = positional_encoding(rays_d, self.num_freqs_dir)
-        rgb_input  = torch.cat([z, rays_d_enc], dim=-1)
-        rgb        = torch.sigmoid(self.color_head(rgb_input))
+        # RGB head
+        x = self.rgb_filter(rgb_input)
+        rgb = self.rgb_out(x)
+        rgb = torch.sigmoid(rgb * self.rgb_mul)
 
-        return rgb, density.squeeze(-1)
+        return rgb, density
