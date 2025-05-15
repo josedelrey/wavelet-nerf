@@ -359,7 +359,7 @@ class MFNBase(nn.Module):
 
 class WaveletNeRF(nn.Module):
     """
-    NeRF-style model using a WaveletNet base and wavelet layers for RGB head.
+    NeRF-style model using a WaveletNet base and simple linear RGB head.
 
     Args:
         in_features (int): Dimensionality of input points (default 3).
@@ -380,8 +380,6 @@ class WaveletNeRF(nn.Module):
         hidden_dim: int = 256,
         num_layers: int = 8,
         dir_encoding_dim: int = 4,
-        sigma_mul: float = 10.0,
-        rgb_mul: float = 1.0,
         input_scale: float = 256.0,
         weight_scale: float = 1.0,
         alpha: float = 6.0,
@@ -390,8 +388,6 @@ class WaveletNeRF(nn.Module):
     ) -> None:
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
-        self.sigma_mul = sigma_mul
-        self.rgb_mul = rgb_mul
 
         # Base MLP: WaveletNet processes 3D points
         self.base_net = WaveletNet(
@@ -416,16 +412,13 @@ class WaveletNeRF(nn.Module):
         # Compute size of direction encoding
         ray_enc_size = dir_encoding_dim * 6 + in_features
 
-        # RGB head: WaveletLayer followed by linear
-        self.rgb_filter = WaveletLayer(
-            in_features=hidden_dim + ray_enc_size,
-            out_features=hidden_dim // 2,
-            weight_scale=weight_scale,
-            alpha=alpha,
-            beta=beta,
-            omega0=omega0,
+        # Simple RGB head: linear layers with positional encoding of direction
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 3),
+            nn.Sigmoid()
         )
-        self.rgb_out = nn.Linear(hidden_dim // 2, 3)
 
     def forward(
         self,
@@ -446,7 +439,7 @@ class WaveletNeRF(nn.Module):
 
         # Density output
         raw_sigma = self.density_branch(base_feats)
-        density = torch.relu(raw_sigma.squeeze(-1)) * self.sigma_mul
+        density = torch.relu(raw_sigma.squeeze(-1))
 
         # Prepare features for RGB head
         remapped = self.feature_remap(base_feats)
@@ -454,8 +447,6 @@ class WaveletNeRF(nn.Module):
         rgb_input = torch.cat([remapped, dir_enc], dim=-1)
 
         # RGB head
-        x = self.rgb_filter(rgb_input)
-        rgb = self.rgb_out(x)
-        rgb = torch.sigmoid(rgb * self.rgb_mul)
+        rgb = self.rgb_head(rgb_input)
 
         return rgb, density

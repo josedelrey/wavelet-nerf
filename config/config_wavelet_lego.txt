@@ -5,8 +5,8 @@
 # --------------------
 # Log Parameters
 # --------------------
-log_root = ./logs                  # Name of the root logs folder
-experiment_name = wavelet_1        # Name of this experiment's log subfolder
+log_root = ./logs                       # Name of the root logs folder
+experiment_name = wavelet_1_1024        # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -16,7 +16,7 @@ dataset_path = ./datasets/lego     # Directory containing the dataset
 # --------------------
 # Sampling Parameters
 # --------------------
-num_random_rays = 512              # Number of random rays sampled per iteration
+num_random_rays = 1024             # Number of random rays sampled per iteration
 chunk_size = 1024                  # Number of rays processed in a single rendering batch
 num_samples = 128                  # Number of samples along each ray
 

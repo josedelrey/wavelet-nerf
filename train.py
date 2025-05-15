@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from modules.data import load_dataset, compute_rays, RayDataset
-from modules.models import NeRF, Siren, MultiScaleWaveletNeRF, WaveletNeRF
+from modules.models import NeRF, Siren, WaveletNeRF
 from modules.rendering import render_nerf
 from modules.loss import mse_to_psnr
 from modules.utils import parse_config, format_elapsed_time
@@ -130,8 +130,6 @@ def main():
         model = NeRF().to(device)
     elif model_type == 'siren':
         model = Siren().to(device)
-    elif model_type == 'multiscalewavelet':
-        model = MultiScaleWaveletNeRF().to(device)
     elif model_type == 'wavelet':
         model = WaveletNeRF().to(device)
     else:
