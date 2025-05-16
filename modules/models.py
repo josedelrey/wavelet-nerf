@@ -315,45 +315,52 @@ class WaveletNet(MFNBase):
         )
 
 
-class MFNBase(nn.Module):
-    """
-    MFNBase: Multiplicative filter network base class.
-    
-    This is the original implementation from "Multiplicative Filter Networks"
-    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021). 
-    See: https://github.com/boschresearch/multiplicative-filter-networks/
-
-    Expects the child class to define the 'filters' attribute, which should be 
-    a nn.ModuleList of n_layers+1 filters with output equal to hidden_size.
-    """
+class WaveletNetNormalized(MFNBase):
     def __init__(
-        self, hidden_size, out_size, n_layers, weight_scale, bias=True, output_act=False
+        self,
+        in_features,
+        hidden_features,
+        out_features,
+        hidden_layers=3,
+        input_scale=256.0,
+        weight_scale=1.0,
+        alpha=6.0,
+        beta=1.0,
+        omega0=5.0,
+        bias=True,
+        output_act=False,
     ):
-        super().__init__()
-
-        self.linear = nn.ModuleList(
-            [nn.Linear(hidden_size, hidden_size, bias) for _ in range(n_layers)]
-        )
-        self.output_linear = nn.Linear(hidden_size, out_size)
-        self.output_act = output_act
-
-        for lin in self.linear:
-            lin.weight.data.uniform_(
-                -np.sqrt(weight_scale / hidden_size),
-                np.sqrt(weight_scale / hidden_size),
+        super().__init__(hidden_features, out_features, hidden_layers, weight_scale, bias, output_act)
+        self.filters = nn.ModuleList([
+            WaveletLayer(
+                in_features,
+                hidden_features,
+                input_scale / np.sqrt(hidden_layers + 1),
+                alpha / (hidden_layers + 1),
+                beta,
+                omega0,
             )
-
-        return
+            for _ in range(hidden_layers + 1)
+        ])
+        # LayerNorm for each filter output and each linear branch
+        self.filter_norms = nn.ModuleList([
+            nn.LayerNorm(hidden_features) for _ in range(hidden_layers + 1)
+        ])
+        self.linear_norms = nn.ModuleList([
+            nn.LayerNorm(hidden_features) for _ in range(hidden_layers)
+        ])
 
     def forward(self, x):
-        out = self.filters[0](x)
+        # first filter + norm
+        out = self.filter_norms[0](self.filters[0](x))
+        # subsequent filters + linear branches with norm
         for i in range(1, len(self.filters)):
-            out = self.filters[i](x) * self.linear[i - 1](out)
+            f = self.filter_norms[i](self.filters[i](x))
+            l = self.linear_norms[i-1](self.linear[i-1](out))
+            out = f * l
         out = self.output_linear(out)
-
         if self.output_act:
             out = torch.sin(out)
-
         return out
 
 
@@ -435,6 +442,79 @@ class WaveletNeRF(nn.Module):
             density: (N,) Density ("sigma") values.
         """
         # Base features from WaveletNet
+        base_feats = self.base_net(points)
+
+        # Density output
+        raw_sigma = self.density_branch(base_feats)
+        density = torch.relu(raw_sigma.squeeze(-1))
+
+        # Prepare features for RGB head
+        remapped = self.feature_remap(base_feats)
+        dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+        rgb_input = torch.cat([remapped, dir_enc], dim=-1)
+
+        # RGB head
+        rgb = self.rgb_head(rgb_input)
+
+        return rgb, density
+
+
+class WaveletNeRFNormalized(nn.Module):
+    """
+    NeRF-style model using a normalized WaveletNet base and simple linear RGB head.
+    """
+    def __init__(
+        self,
+        in_features: int = 3,
+        hidden_dim: int = 256,
+        num_layers: int = 8,
+        dir_encoding_dim: int = 4,
+        input_scale: float = 256.0,
+        weight_scale: float = 1.0,
+        alpha: float = 6.0,
+        beta: float = 1.0,
+        omega0: float = 5.0,
+    ) -> None:
+        super().__init__()
+        self.dir_encoding_dim = dir_encoding_dim
+
+        # Use the normalized WaveletNet here:
+        self.base_net = WaveletNetNormalized(
+            in_features=in_features,
+            hidden_features=hidden_dim,
+            out_features=hidden_dim,
+            hidden_layers=num_layers,
+            input_scale=input_scale,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+            output_act=False,
+        )
+
+        # Density branch: simple linear from base features
+        self.density_branch = nn.Linear(hidden_dim, 1)
+
+        # Feature remapping for RGB head
+        self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
+
+        # Compute size of direction encoding
+        ray_enc_size = dir_encoding_dim * 6 + in_features
+
+        # Simple RGB head: linear layers with positional encoding of direction
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 3),
+            nn.Sigmoid()
+        )
+
+    def forward(
+        self,
+        points: torch.Tensor,
+        rays_d: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # Base features from normalized WaveletNet
         base_feats = self.base_net(points)
 
         # Density output

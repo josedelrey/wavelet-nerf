@@ -6,7 +6,7 @@
 # Log Parameters
 # --------------------
 log_root = ./logs                       # Name of the root logs folder
-experiment_name = wavelet_1        # Name of this experiment's log subfolder
+experiment_name = wavelet_2             # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -55,7 +55,7 @@ first_step_render = false          # First step validation render flag
 # --------------------
 # Model Type
 # --------------------
-model_type = wavelet
+model_type = wavelet_normalized
 
 # --------------------
 # Evaluation Render Parameters
