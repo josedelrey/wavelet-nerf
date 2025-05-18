@@ -10,9 +10,6 @@ datasets/
 # Ignore the models directory
 models/
 
-# Ignore auxiliary scripts
-aux_scripts/
-
 # Ignore rendered frames directory
 rendered_frames/
 
