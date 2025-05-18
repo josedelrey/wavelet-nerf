@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import torch.utils.checkpoint as cp
 from typing import Tuple
-from torch.nn import functional as F
 
 from modules.encoding import positional_encoding
 
@@ -529,4 +529,138 @@ class WaveletNeRFNormalized(nn.Module):
         # RGB head
         rgb = self.rgb_head(rgb_input)
 
+        return rgb, density
+
+
+# === Checkpointed Wavelet Layer ===
+class FastWaveletLayer(WaveletLayer):
+    """
+    Checkpointed WaveletLayer: recomputes heavy distance matrix on backward.
+    """
+    def _core(self, x: torch.Tensor) -> torch.Tensor:
+        # replicate WaveletLayer forward logic without saving intermediates
+        # compute squared distances
+        D = (
+            x.pow(2).sum(-1, keepdim=True)
+            + self.mu.pow(2).sum(-1).unsqueeze(0)
+            - 2 * x @ self.mu.T
+        )
+        # Gabor response
+        gabor = torch.sin(self.linear(self.omega0 * x))
+        return gabor * torch.exp(-0.5 * D * self.gamma[None, :])
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # checkpoint the core computation
+        return cp.checkpoint(self._core, x, use_reentrant=False)
+
+# === Fast Wavelet Network ===
+class FastWaveletNet(WaveletNet):
+    """
+    WaveletNet with all filters replaced by FastWaveletLayer.
+    """
+    def __init__(
+        self,
+        in_features: int,
+        hidden_features: int,
+        out_features: int,
+        hidden_layers: int = 3,
+        input_scale: float = 256.0,
+        weight_scale: float = 1.0,
+        alpha: float = 6.0,
+        beta: float = 1.0,
+        omega0: float = 5.0,
+        bias: bool = True,
+        output_act: bool = False,
+    ):
+        super().__init__(
+            in_features=in_features,
+            hidden_features=hidden_features,
+            out_features=out_features,
+            hidden_layers=hidden_layers,
+            input_scale=input_scale,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+            bias=bias,
+            output_act=output_act,
+        )
+        # replace filters with checkpointed versions
+        self.filters = nn.ModuleList([
+            FastWaveletLayer(
+                f.linear.in_features,
+                f.linear.out_features,
+                weight_scale=input_scale / (hidden_layers + 1) ** 0.5,
+                alpha=alpha / (hidden_layers + 1),
+                beta=beta,
+                omega0=omega0,
+            )
+            for f in self.filters
+        ])
+
+# === FastWaveletNeRF Model ===
+class FastWaveletNeRF(nn.Module):
+    """
+    NeRF-style model using a FastWaveletNet base and simple linear RGB head.
+    Provides identical interface to WaveletNeRF with much lower memory.
+    """
+    def __init__(
+        self,
+        in_features: int = 3,
+        hidden_dim: int = 256,
+        num_layers: int = 8,
+        dir_encoding_dim: int = 4,
+        input_scale: float = 256.0,
+        weight_scale: float = 1.0,
+        alpha: float = 6.0,
+        beta: float = 1.0,
+        omega0: float = 5.0,
+    ) -> None:
+        super().__init__()
+        self.dir_encoding_dim = dir_encoding_dim
+
+        # Base MLP: FastWaveletNet processes 3D points
+        self.base_net = FastWaveletNet(
+            in_features=in_features,
+            hidden_features=hidden_dim,
+            out_features=hidden_dim,
+            hidden_layers=num_layers,
+            input_scale=input_scale,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+            bias=True,
+            output_act=False,
+        )
+
+        # Density branch
+        self.density_branch = nn.Linear(hidden_dim, 1)
+        # Feature remap for RGB head
+        self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
+
+        # Ray direction encoding size
+        ray_enc_size = dir_encoding_dim * 6 + in_features
+        self.rgb_head = nn.Sequential(
+            nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim // 2, 3),
+            nn.Sigmoid()
+        )
+
+    def forward(
+        self,
+        points: torch.Tensor,
+        rays_d: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # base features
+        base_feats = self.base_net(points)
+        # density
+        raw_sigma = self.density_branch(base_feats)
+        density = torch.relu(raw_sigma.squeeze(-1))
+        # rgb
+        remapped = self.feature_remap(base_feats)
+        dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
+        rgb_in = torch.cat([remapped, dir_enc], dim=-1)
+        rgb = self.rgb_head(rgb_in)
         return rgb, density
