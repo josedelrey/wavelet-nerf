@@ -248,13 +248,17 @@ class MFNBase(nn.Module):
 
 class WaveletLayer(nn.Module):
     """
-    GaborLayer: Gabor-like filter as used in GaborNet.
-    
-    This is the original implementation from "Multiplicative Filter Networks"
-    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021). 
-    See: https://github.com/boschresearch/multiplicative-filter-networks/
+    Fast, checkpointed WaveletLayer: recomputes heavy distance matrix on backward via checkpoint.
     """
-    def __init__(self, in_features, out_features, weight_scale, alpha=1.0, beta=1.0, omega0=5.0):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        weight_scale: float,
+        alpha: float = 1.0,
+        beta: float = 1.0,
+        omega0: float = 5.0,
+    ):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features)
         self.mu = nn.Parameter(2 * torch.rand(out_features, in_features) - 1)
@@ -262,344 +266,112 @@ class WaveletLayer(nn.Module):
             torch.distributions.gamma.Gamma(alpha, beta).sample((out_features,))
         )
         self.omega0 = omega0
+        # scale linear weights by sqrt(gamma)
         self.linear.weight.data *= weight_scale * torch.sqrt(self.gamma[:, None])
         self.linear.bias.data.uniform_(-np.pi, np.pi)
-        return
 
-    def forward(self, x):
-        D = (
-            (x ** 2).sum(-1)[..., None]
-            + (self.mu ** 2).sum(-1)[None, :]
-            - 2 * x @ self.mu.T
-        )
-        return torch.sin(self.linear(self.omega0 * x)) * torch.exp(-0.5 * D * self.gamma[None, :])
-
-
-class WaveletNet(MFNBase):
-    """
-    GaborNet: Network using GaborLayer filters.
-    
-    This is the original implementation from "Multiplicative Filter Networks"
-    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021).
-    See: https://github.com/boschresearch/multiplicative-filter-networks/
-    """
-    def __init__(
-        self,
-        in_features,
-        hidden_features,
-        out_features,
-        hidden_layers=3,
-        input_scale=256.0,
-        weight_scale=1.0,
-        alpha=6.0,
-        beta=1.0,
-        omega0=5.0,
-        bias=True,
-        output_act=False,
-    ):
-        super().__init__(
-            hidden_features, out_features, hidden_layers, weight_scale, bias, output_act
-        )
-        self.filters = nn.ModuleList(
-            [
-                WaveletLayer(
-                    in_features,
-                    hidden_features,
-                    input_scale / np.sqrt(hidden_layers + 1),
-                    alpha / (hidden_layers + 1),
-                    beta,
-                    omega0
-                )
-                for _ in range(hidden_layers + 1)
-            ]
-        )
-
-
-class WaveletNetNormalized(MFNBase):
-    def __init__(
-        self,
-        in_features,
-        hidden_features,
-        out_features,
-        hidden_layers=3,
-        input_scale=256.0,
-        weight_scale=1.0,
-        alpha=6.0,
-        beta=1.0,
-        omega0=5.0,
-        bias=True,
-        output_act=False,
-    ):
-        super().__init__(hidden_features, out_features, hidden_layers, weight_scale, bias, output_act)
-        self.filters = nn.ModuleList([
-            WaveletLayer(
-                in_features,
-                hidden_features,
-                input_scale / np.sqrt(hidden_layers + 1),
-                alpha / (hidden_layers + 1),
-                beta,
-                omega0,
-            )
-            for _ in range(hidden_layers + 1)
-        ])
-        # LayerNorm for each filter output and each linear branch
-        self.filter_norms = nn.ModuleList([
-            nn.LayerNorm(hidden_features) for _ in range(hidden_layers + 1)
-        ])
-        self.linear_norms = nn.ModuleList([
-            nn.LayerNorm(hidden_features) for _ in range(hidden_layers)
-        ])
-
-    def forward(self, x):
-        # first filter + norm
-        out = self.filter_norms[0](self.filters[0](x))
-        # subsequent filters + linear branches with norm
-        for i in range(1, len(self.filters)):
-            f = self.filter_norms[i](self.filters[i](x))
-            l = self.linear_norms[i-1](self.linear[i-1](out))
-            out = f * l
-        out = self.output_linear(out)
-        if self.output_act:
-            out = torch.sin(out)
-        return out
-
-
-class WaveletNeRF(nn.Module):
-    """
-    NeRF-style model using a WaveletNet base and simple linear RGB head.
-
-    Args:
-        in_features (int): Dimensionality of input points (default 3).
-        hidden_dim (int): Hidden dimension for the base and branches.
-        num_layers (int): Number of wavelet layers in the base.
-        dir_encoding_dim (int): Number of frequencies for ray direction encoding.
-        sigma_mul (float): Multiplicative factor on density output.
-        rgb_mul (float): Multiplicative factor on RGB output before sigmoid.
-        input_scale (float): Scaling factor for WaveletNet input.
-        weight_scale (float): Base weight scale for wavelet filters.
-        alpha (float): Alpha parameter for gamma distribution in WaveletLayers.
-        beta (float): Beta parameter for gamma distribution in WaveletLayers.
-        omega0 (float): Frequency scaling for WaveletLayer.
-    """
-    def __init__(
-        self,
-        in_features: int = 3,
-        hidden_dim: int = 256,
-        num_layers: int = 8,
-        dir_encoding_dim: int = 4,
-        input_scale: float = 256.0,
-        weight_scale: float = 1.0,
-        alpha: float = 6.0,
-        beta: float = 1.0,
-        omega0: float = 5.0,
-    ) -> None:
-        super().__init__()
-        self.dir_encoding_dim = dir_encoding_dim
-
-        # Base MLP: WaveletNet processes 3D points
-        self.base_net = WaveletNet(
-            in_features=in_features,
-            hidden_features=hidden_dim,
-            out_features=hidden_dim,
-            hidden_layers=num_layers,
-            input_scale=input_scale,
-            weight_scale=weight_scale,
-            alpha=alpha,
-            beta=beta,
-            omega0=omega0,
-            output_act=False,
-        )
-
-        # Density branch: simple linear from base features
-        self.density_branch = nn.Linear(hidden_dim, 1)
-
-        # Feature remapping for RGB head
-        self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
-
-        # Compute size of direction encoding
-        ray_enc_size = dir_encoding_dim * 6 + in_features
-
-        # Simple RGB head: linear layers with positional encoding of direction
-        self.rgb_head = nn.Sequential(
-            nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid()
-        )
-
-    def forward(
-        self,
-        points: torch.Tensor,
-        rays_d: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            points: (N, 3) 3D sample points.
-            rays_d: (N, 3) Corresponding ray directions.
-
-        Returns:
-            rgb: (N, 3) Color values in [0,1].
-            density: (N,) Density ("sigma") values.
-        """
-        # Base features from WaveletNet
-        base_feats = self.base_net(points)
-
-        # Density output
-        raw_sigma = self.density_branch(base_feats)
-        density = torch.relu(raw_sigma.squeeze(-1))
-
-        # Prepare features for RGB head
-        remapped = self.feature_remap(base_feats)
-        dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
-        rgb_input = torch.cat([remapped, dir_enc], dim=-1)
-
-        # RGB head
-        rgb = self.rgb_head(rgb_input)
-
-        return rgb, density
-
-
-class WaveletNeRFNormalized(nn.Module):
-    """
-    NeRF-style model using a normalized WaveletNet base and simple linear RGB head.
-    """
-    def __init__(
-        self,
-        in_features: int = 3,
-        hidden_dim: int = 256,
-        num_layers: int = 8,
-        dir_encoding_dim: int = 4,
-        input_scale: float = 256.0,
-        weight_scale: float = 1.0,
-        alpha: float = 6.0,
-        beta: float = 1.0,
-        omega0: float = 5.0,
-    ) -> None:
-        super().__init__()
-        self.dir_encoding_dim = dir_encoding_dim
-
-        # Use the normalized WaveletNet here:
-        self.base_net = WaveletNetNormalized(
-            in_features=in_features,
-            hidden_features=hidden_dim,
-            out_features=hidden_dim,
-            hidden_layers=num_layers,
-            input_scale=input_scale,
-            weight_scale=weight_scale,
-            alpha=alpha,
-            beta=beta,
-            omega0=omega0,
-            output_act=False,
-        )
-
-        # Density branch: simple linear from base features
-        self.density_branch = nn.Linear(hidden_dim, 1)
-
-        # Feature remapping for RGB head
-        self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
-
-        # Compute size of direction encoding
-        ray_enc_size = dir_encoding_dim * 6 + in_features
-
-        # Simple RGB head: linear layers with positional encoding of direction
-        self.rgb_head = nn.Sequential(
-            nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid()
-        )
-
-    def forward(
-        self,
-        points: torch.Tensor,
-        rays_d: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Base features from normalized WaveletNet
-        base_feats = self.base_net(points)
-
-        # Density output
-        raw_sigma = self.density_branch(base_feats)
-        density = torch.relu(raw_sigma.squeeze(-1))
-
-        # Prepare features for RGB head
-        remapped = self.feature_remap(base_feats)
-        dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
-        rgb_input = torch.cat([remapped, dir_enc], dim=-1)
-
-        # RGB head
-        rgb = self.rgb_head(rgb_input)
-
-        return rgb, density
-
-
-# === Checkpointed Wavelet Layer ===
-class FastWaveletLayer(WaveletLayer):
-    """
-    Checkpointed WaveletLayer: recomputes heavy distance matrix on backward.
-    """
     def _core(self, x: torch.Tensor) -> torch.Tensor:
-        # replicate WaveletLayer forward logic without saving intermediates
-        # compute squared distances
+        # compute squared distances D
         D = (
             x.pow(2).sum(-1, keepdim=True)
             + self.mu.pow(2).sum(-1).unsqueeze(0)
             - 2 * x @ self.mu.T
         )
-        # Gabor response
+        # Gabor-like response
         gabor = torch.sin(self.linear(self.omega0 * x))
         return gabor * torch.exp(-0.5 * D * self.gamma[None, :])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # checkpoint the core computation
+        # checkpoint the core computation to save memory on backward
         return cp.checkpoint(self._core, x, use_reentrant=False)
 
-# === Fast Wavelet Network ===
-class FastWaveletNet(WaveletNet):
+
+class WaveletNet(MFNBase):
     """
-    WaveletNet with all filters replaced by FastWaveletLayer.
+    WaveletNet: Network using WaveletLayer filters, with optional normalization.
+    
+    Args:
+        in_features (int): Input feature dimension.
+        hidden_features (int): Hidden feature dimension.
+        out_features (int): Output feature dimension.
+        hidden_layers (int): Number of multiplicative layers (default: 3).
+        input_scale (float): Scale applied to input of WaveletLayer (default: 256.0).
+        weight_scale (float): Scaling factor for linear weights (default: 1.0).
+        alpha (float): Alpha parameter for WaveletLayer (default: 6.0).
+        beta (float): Beta parameter for WaveletLayer (default: 1.0).
+        omega0 (float): Omega0 parameter for WaveletLayer (default: 5.0).
+        bias (bool): Whether to include bias in linear layers (default: True).
+        output_act (bool): Whether to apply final sine activation (default: False).
+        normalized (bool): Whether to apply LayerNorm on filter and linear outputs (default: False).
     """
     def __init__(
         self,
-        in_features: int,
-        hidden_features: int,
-        out_features: int,
-        hidden_layers: int = 3,
-        input_scale: float = 256.0,
-        weight_scale: float = 1.0,
-        alpha: float = 6.0,
-        beta: float = 1.0,
-        omega0: float = 5.0,
-        bias: bool = True,
-        output_act: bool = False,
+        in_features,
+        hidden_features,
+        out_features,
+        hidden_layers=3,
+        input_scale=256.0,
+        weight_scale=1.0,
+        alpha=6.0,
+        beta=1.0,
+        omega0=5.0,
+        normalized=False,
     ):
-        super().__init__(
-            in_features=in_features,
-            hidden_features=hidden_features,
-            out_features=out_features,
-            hidden_layers=hidden_layers,
-            input_scale=input_scale,
-            weight_scale=weight_scale,
-            alpha=alpha,
-            beta=beta,
-            omega0=omega0,
-            bias=bias,
-            output_act=output_act,
-        )
-        # replace filters with checkpointed versions
+        # Initialize base linear and multiplicative branches
+        super().__init__(hidden_features, out_features, hidden_layers, weight_scale)
+
+        self.normalized = normalized
+        n_layers = hidden_layers + 1
+        scale = input_scale / np.sqrt(n_layers)
+        alpha_scaled = alpha / n_layers
+
+        # Create Wavelet filter layers
         self.filters = nn.ModuleList([
-            FastWaveletLayer(
-                f.linear.in_features,
-                f.linear.out_features,
-                weight_scale=input_scale / (hidden_layers + 1) ** 0.5,
-                alpha=alpha / (hidden_layers + 1),
-                beta=beta,
-                omega0=omega0,
+            WaveletLayer(
+                in_features,
+                hidden_features,
+                scale,
+                alpha_scaled,
+                beta,
+                omega0,
             )
-            for f in self.filters
+            for _ in range(n_layers)
         ])
 
-# === FastWaveletNeRF Model ===
-class FastWaveletNeRF(nn.Module):
+        if self.normalized:
+            # LayerNorm for each filter and each linear branch
+            self.filter_norms = nn.ModuleList(
+                [nn.LayerNorm(hidden_features) for _ in range(n_layers)]
+            )
+            self.linear_norms = nn.ModuleList(
+                [nn.LayerNorm(hidden_features) for _ in range(hidden_layers)]
+            )
+
+    def forward(self, x):
+        # First filter pass
+        out = self.filters[0](x)
+        if self.normalized:
+            out = self.filter_norms[0](out)
+
+        # Subsequent multiplicative filter + linear branches
+        for i in range(1, len(self.filters)):
+            f = self.filters[i](x)
+            if self.normalized:
+                f = self.filter_norms[i](f)
+
+            l = self.linear[i-1](out)
+            if self.normalized:
+                l = self.linear_norms[i-1](l)
+
+            out = f * l
+
+        # Final linear output
+        out = self.output_linear(out)
+
+        return out
+
+
+class WaveletNeRF(nn.Module):
     """
     NeRF-style model using a FastWaveletNet base and simple linear RGB head.
     Provides identical interface to WaveletNeRF with much lower memory.
@@ -615,12 +387,13 @@ class FastWaveletNeRF(nn.Module):
         alpha: float = 6.0,
         beta: float = 1.0,
         omega0: float = 5.0,
+        normalized: bool = True,
     ) -> None:
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
 
         # Base MLP: FastWaveletNet processes 3D points
-        self.base_net = FastWaveletNet(
+        self.base_net = WaveletNet(
             in_features=in_features,
             hidden_features=hidden_dim,
             out_features=hidden_dim,
@@ -630,8 +403,8 @@ class FastWaveletNeRF(nn.Module):
             alpha=alpha,
             beta=beta,
             omega0=omega0,
-            bias=True,
             output_act=False,
+            normalized=normalized,
         )
 
         # Density branch

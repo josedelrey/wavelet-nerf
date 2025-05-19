@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from modules.data import load_dataset, compute_rays, RayDataset
 from modules.models import NeRF, Siren
-from modules.models import WaveletNeRF, WaveletNeRFNormalized, FastWaveletNeRF
+from modules.models import WaveletNeRF
 from modules.rendering import render_nerf
 from modules.loss import mse_to_psnr
 from modules.utils import parse_config, format_elapsed_time
@@ -132,9 +132,7 @@ def main():
     elif model_type == 'siren':
         model = Siren().to(device)
     elif model_type == 'wavelet':
-        model = FastWaveletNeRF().to(device)
-    elif model_type == 'wavelet_normalized':
-        model = WaveletNeRFNormalized().to(device)
+        model = WaveletNeRF().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
 
