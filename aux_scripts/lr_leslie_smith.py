@@ -15,7 +15,7 @@ repo_root  = os.path.abspath(os.path.join(script_dir, '..'))
 sys.path.insert(0, repo_root)
 
 from modules.data import load_dataset, compute_rays, RayDataset
-from modules.models import NeRF, Siren, MultiScaleWaveletNeRF
+from modules.models import NeRF, Siren, WaveletNeRF
 from modules.rendering import render_nerf
 
 
@@ -23,8 +23,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="LR range test for NeRF variants with TensorBoard"
     )
-    parser.add_argument('--model',     choices=['nerf','siren','multiscalewavelet'],
-                        default='multiscalewavelet')
+    parser.add_argument('--model',     choices=['nerf','siren','wavelet'],
+                        default='wavelet')
     parser.add_argument('--lr_start',  type=float, default=1e-6,
                         help='Starting LR for range test')
     parser.add_argument('--lr_end',    type=float, default=1e-1,
@@ -52,7 +52,7 @@ def main():
     elif args.model == 'siren':
         model = Siren().to(device)
     else:
-        model = MultiScaleWaveletNeRF().to(device)
+        model = WaveletNeRF().to(device)
 
     # Optimizer (lr overwritten each step)
     optimizer = optim.Adam(model.parameters(), lr=args.lr_start)

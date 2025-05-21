@@ -403,7 +403,6 @@ class WaveletNeRF(nn.Module):
             alpha=alpha,
             beta=beta,
             omega0=omega0,
-            output_act=False,
             normalized=normalized,
         )
 
