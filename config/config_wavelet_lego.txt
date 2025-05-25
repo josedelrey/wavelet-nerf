@@ -5,8 +5,8 @@
 # --------------------
 # Log Parameters
 # --------------------
-log_root = ./logs                       # Name of the root logs folder
-experiment_name = xxx                   # Name of this experiment's log subfolder
+log_root = ./logs                  # Name of the root logs folder
+experiment_name = wavelet_3        # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
