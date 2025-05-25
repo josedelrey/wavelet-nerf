@@ -135,12 +135,6 @@ def main():
         model = WaveletNeRF().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
-    
-    # Compile the model for performance optimization
-    if device.type == 'cuda':
-        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
-    else:
-        print("Skipping torch.compile: CPU-only environment")
 
     # Load the training dataset
     print("Loading training dataset...")
@@ -186,6 +180,12 @@ def main():
         writer_kwargs['purge_step'] = start_iter
     writer = SummaryWriter(**writer_kwargs)
     writer.add_text('config', str(config))
+
+    # Compile the model for performance optimization
+    if device.type == 'cuda':
+        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
+    else:
+        print("Skipping torch.compile: CPU-only environment")
 
     # Training loop
     try:
