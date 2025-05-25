@@ -135,6 +135,12 @@ def main():
         model = WaveletNeRF().to(device)
     else:
         raise ValueError(f"Invalid model type: {model_type}")
+    
+    # Compile the model for performance optimization
+    if device.type == 'cuda':
+        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
+    else:
+        print("Skipping torch.compile: CPU-only environment")
 
     # Load the training dataset
     print("Loading training dataset...")
@@ -145,11 +151,14 @@ def main():
     print("Loading validation dataset...")
     images_val_np, c2w_val_np, focal_length_val = load_dataset(dataset_path, mode='val')
     N_val, H_val, W_val, _ = images_np.shape
-    print(f"Loaded {N_val} validation images of resolution {H_val}x{W_val}.")
 
     # Create the dataset and DataLoader
     dataset = RayDataset(rays_o, rays_d, target_pixels)
-    data_loader = DataLoader(dataset, batch_size=num_random_rays, shuffle=True, pin_memory=(device.type == 'cuda'))
+    data_loader = DataLoader(dataset, 
+                             batch_size=num_random_rays, 
+                             shuffle=True,
+                             num_workers=4,
+                             pin_memory=(device.type == 'cuda'))
     loader_iter = iter(data_loader)
 
     # Set up the optimizer and loss function

@@ -6,7 +6,7 @@
 # Log Parameters
 # --------------------
 log_root = ./logs                       # Name of the root logs folder
-experiment_name = wavelet_3             # Name of this experiment's log subfolder
+experiment_name = xxx                   # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -44,7 +44,7 @@ lr_min = 5e-5                      # Minimum learning rate possible
 # --------------------
 # Monitoring Parameters
 # --------------------
-log_interval = 50                  # Interval (in iterations) for logging training metrics
+log_interval = 100                 # Interval (in iterations) for logging training metrics
 val_interval = 50000               # Interval (in iterations) for running validation
 
 # --------------------
