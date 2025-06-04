@@ -23,7 +23,7 @@ num_samples = 128                  # Number of samples along each ray
 # --------------------
 # Training Parameters
 # --------------------
-num_iters = 300000                 # Total number of training iterations
+num_iters = 600000                 # Total number of training iterations
 learning_rate = 5e-4               # Starting learning rate for the optimizer
 near = 2.0                         # Near bound for ray sampling
 far = 6.0                          # Far bound for ray sampling
@@ -53,12 +53,16 @@ val_interval = 50000               # Interval (in iterations) for running valida
 first_step_render = false          # First step validation render flag
 
 # --------------------
+# Evaluation Render Parameters
+# --------------------
+num_render_poses = 40              # Number of frames of the evaluation video
+num_samples_eval = 256             # Number of samples per ray for evaluation
+
+# --------------------
 # Model Type
 # --------------------
 model_type = nerf
 
 # --------------------
-# Evaluation Render Parameters
+# Model Hyperparameters
 # --------------------
-num_render_poses = 40              # Number of frames of the evaluation video
-num_samples_eval = 256             # Number of samples per ray for evaluation

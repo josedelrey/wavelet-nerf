@@ -1,5 +1,5 @@
 # =============================================================================
-# NeRF Configuration File for Lego Dataset
+# SIREN Configuration File for Lego Dataset
 # =============================================================================
 
 # --------------------
@@ -53,12 +53,17 @@ val_interval = 10000               # Interval (in iterations) for running valida
 first_step_render = false          # First step validation render flag
 
 # --------------------
+# Evaluation Render Parameters
+# --------------------
+num_render_poses = 80              # Number of frames of the evaluation video
+num_samples_eval = 256             # Number of samples per ray for evaluation
+
+# --------------------
 # Model Type
 # --------------------
 model_type = siren
 
 # --------------------
-# Evaluation Render Parameters
+# Model Hyperparameters
 # --------------------
-num_render_poses = 80              # Number of frames of the evaluation video
-num_samples_eval = 256             # Number of samples per ray for evaluation
+

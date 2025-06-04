@@ -1,12 +1,12 @@
 # =============================================================================
-# NeRF Configuration File for Lego Dataset
+# WaveletNeRF Configuration File for Lego Dataset
 # =============================================================================
 
 # --------------------
 # Log Parameters
 # --------------------
 log_root = ./logs                  # Name of the root logs folder
-experiment_name = wavelet_3        # Name of this experiment's log subfolder
+experiment_name = wavelet_4        # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -39,7 +39,7 @@ save_interval = 5000               # Interval (in iterations) for saving model c
 # --------------------
 lr_decay = 300                     # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate at decay
-lr_min = 5e-5                      # Minimum learning rate possible
+lr_min = 3e-5                      # Minimum learning rate possible
 
 # --------------------
 # Monitoring Parameters
@@ -53,12 +53,16 @@ val_interval = 50000               # Interval (in iterations) for running valida
 first_step_render = false          # First step validation render flag
 
 # --------------------
+# Evaluation Render Parameters
+# --------------------
+num_render_poses = 40              # Number of frames of the evaluation video
+num_samples_eval = 256             # Number of samples per ray for evaluation
+
+# --------------------
 # Model Type
 # --------------------
 model_type = wavelet
 
 # --------------------
-# Evaluation Render Parameters
+# Model Hyperparameters
 # --------------------
-num_render_poses = 40              # Number of frames of the evaluation video
-num_samples_eval = 256             # Number of samples per ray for evaluation

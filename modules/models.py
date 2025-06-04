@@ -385,9 +385,9 @@ class WaveletNeRF(nn.Module):
         input_scale: float = 256.0,
         weight_scale: float = 1.0,
         alpha: float = 6.0,
-        beta: float = 1.0,
+        beta: float = 0.5,
         omega0: float = 5.0,
-        normalized: bool = True,
+        normalized: bool = True
     ) -> None:
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
