@@ -5,8 +5,8 @@
 # --------------------
 # Log Parameters
 # --------------------
-log_root = ./logs                       # Name of the root logs folder
-experiment_name = nerf                  # Name of this experiment's log subfolder
+log_root = ./logs                  # Name of the root logs folder
+experiment_name = nerf             # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -66,3 +66,6 @@ model_type = nerf
 # --------------------
 # Model Hyperparameters
 # --------------------
+pos_encoding_dim = 10
+dir_encoding_dim = 4
+hidden_dim = 256

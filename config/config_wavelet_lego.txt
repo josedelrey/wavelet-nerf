@@ -6,7 +6,7 @@
 # Log Parameters
 # --------------------
 log_root = ./logs                  # Name of the root logs folder
-experiment_name = wavelet_4        # Name of this experiment's log subfolder
+experiment_name = wavelet_5        # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -66,3 +66,13 @@ model_type = wavelet
 # --------------------
 # Model Hyperparameters
 # --------------------
+wave_in_features = 3
+wave_hidden_dim = 256
+wave_num_layers = 8
+wave_dir_encoding_dim = 4
+input_scale = 128.0
+weight_scale = 1.0
+alpha = 6.0
+beta = 1.0
+omega0 = 5.0
+normalized = True

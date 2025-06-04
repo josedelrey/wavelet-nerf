@@ -99,13 +99,74 @@ def main():
                 print("Aborting.")
                 exit(0)
 
-        model_type = config.get('model_type', 'NeRF').lower()
+        model_type = config.get('model_type', 'nerf').lower()
+
+    # Depending on model type, pull out hyperparameters
+    if model_type == 'nerf':
+        # Read NeRF‐specific keys
+        pos_encoding_dim = int(config.get('pos_encoding_dim', 10))
+        dir_encoding_dim = int(config.get('dir_encoding_dim', 4))
+        hidden_dim     = int(config.get('hidden_dim', 256))
+        model = NeRF(
+            pos_encoding_dim=pos_encoding_dim,
+            dir_encoding_dim=dir_encoding_dim,
+            hidden_dim=hidden_dim
+        ).to(device)
+
+    elif model_type == 'siren':
+        # Read Siren‐specific keys
+        num_layers            = int(config.get('num_layers', 8))
+        hidden_dim            = int(config.get('siren_hidden_dim', 256))
+        dir_encoding_dim      = int(config.get('siren_dir_encoding_dim', 4))
+        sigma_mul             = float(config.get('sigma_mul', 10.0))
+        rgb_mul               = float(config.get('rgb_mul', 1.0))
+        w0                    = float(config.get('w0', 30.0))
+        hidden_w0             = float(config.get('hidden_w0', 1.0))
+
+        model = Siren(
+            num_layers=num_layers,
+            hidden_dim=hidden_dim,
+            dir_encoding_dim=dir_encoding_dim,
+            sigma_mul=sigma_mul,
+            rgb_mul=rgb_mul,
+            w0=w0,
+            hidden_w0=hidden_w0
+        ).to(device)
+
+    elif model_type == 'wavelet':
+        # Read WaveletNeRF‐specific keys
+        in_features        = int(config.get('wave_in_features', 3))
+        hidden_dim         = int(config.get('wave_hidden_dim', 256))
+        num_layers         = int(config.get('wave_num_layers', 8))
+        dir_encoding_dim   = int(config.get('wave_dir_encoding_dim', 4))
+        input_scale        = float(config.get('input_scale', 256.0))
+        weight_scale       = float(config.get('weight_scale', 1.0))
+        alpha              = float(config.get('alpha', 6.0))
+        beta               = float(config.get('beta', 0.5))
+        omega0             = float(config.get('omega0', 5.0))
+        normalized_flag    = config.get('normalized', 'True').lower() in ['true', '1', 'yes']
+
+        model = WaveletNeRF(
+            in_features=in_features,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            dir_encoding_dim=dir_encoding_dim,
+            input_scale=input_scale,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+            normalized=normalized_flag
+        ).to(device)
+
+    else:
+        raise ValueError(f"Invalid model type: {model_type}")
 
     # Monitoring parameters
     log_interval = int(config.get('log_interval', 10))
     val_interval = int(config.get('val_interval', 1000))
-    
-    print("===== Training Configuration Summary =====")
+    print("\n===== Training Configuration Summary =====")
+    print(f"Experiment name: {experiment_name}")
     print(f"Dataset path: {dataset_path}")
     print(f"Number of random rays: {num_random_rays}")
     print(f"Chunk size: {chunk_size}")
@@ -122,19 +183,38 @@ def main():
     print(f"First step render: {first_step_render}")
     print(f"Log interval: {log_interval}")
     print(f"Validation interval: {val_interval}")
-    print(f"Model type: {model_type}")
     print(f"Log directory: {log_dir}")
-    print("==========================================")
+    print(f"===========================================")
+    print("\n========== Model Hyperparameters ==========")
+    print(f"Model type: {model_type}")
 
-    # Load the model
     if model_type == 'nerf':
-        model = NeRF().to(device)
+        print(f"pos_encoding_dim: {pos_encoding_dim}")
+        print(f"dir_encoding_dim: {dir_encoding_dim}")
+        print(f"hidden_dim: {hidden_dim}")
+
     elif model_type == 'siren':
-        model = Siren().to(device)
+        print(f"num_layers: {num_layers}")
+        print(f"siren_hidden_dim: {hidden_dim}")
+        print(f"siren_dir_encoding_dim: {dir_encoding_dim}")
+        print(f"sigma_mul: {sigma_mul}")
+        print(f"rgb_mul: {rgb_mul}")
+        print(f"w0: {w0}")
+        print(f"hidden_w0: {hidden_w0}")
+
     elif model_type == 'wavelet':
-        model = WaveletNeRF().to(device)
-    else:
-        raise ValueError(f"Invalid model type: {model_type}")
+        print(f"wave_in_features: {in_features}")
+        print(f"wave_hidden_dim: {hidden_dim}")
+        print(f"wave_num_layers: {num_layers}")
+        print(f"wave_dir_encoding_dim: {dir_encoding_dim}")
+        print(f"input_scale: {input_scale}")
+        print(f"weight_scale: {weight_scale}")
+        print(f"alpha: {alpha}")
+        print(f"beta: {beta}")
+        print(f"omega0: {omega0}")
+        print(f"normalized: {normalized_flag}")
+
+    print(f"===========================================\n")
     
     # Compile the model for performance optimization
     if device.type == 'cuda':

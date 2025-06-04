@@ -66,4 +66,10 @@ model_type = siren
 # --------------------
 # Model Hyperparameters
 # --------------------
-
+num_layers = 8
+siren_hidden_dim = 256
+siren_dir_encoding_dim = 4
+sigma_mul = 10.0
+rgb_mul = 1.0
+w0 = 30.0
+hidden_w0 = 1.0
