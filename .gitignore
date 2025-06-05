@@ -1,23 +1,23 @@
 # Ignore python cache files
-__pycache__/
+__pycache__
 
 # Ignore the logs directory
-logs/
+logs
 
 # Ignore the datasets directory
-datasets/
+datasets
 
 # Ignore the models directory
-models/
+models
 
 # Ignore rendered frames directory
-rendered_frames/
+rendered_frames
 
 # Ignore model graveyard
-graveyard/
+graveyard
 
 # Ignore experiments markdown file
 experiments.md
 
 # Ignore aux_scripts directory
-aux_scripts/
+aux_scripts
