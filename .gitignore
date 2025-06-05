@@ -16,8 +16,8 @@ rendered_frames/
 # Ignore model graveyard
 graveyard/
 
-# Ignore notes
-notes.txt
-
 # Ignore experiments markdown file
 experiments.md
+
+# Ignore aux_scripts directory
+aux_scripts/
