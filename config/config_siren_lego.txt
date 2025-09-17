@@ -6,7 +6,7 @@
 # Log Parameters
 # --------------------
 log_root = ./logs                  # Name of the root logs folder
-experiment_name = siren_1          # Name of this experiment's log subfolder
+experiment_name = siren            # Name of this experiment's log subfolder
 
 # --------------------
 # Dataset Parameters
@@ -18,13 +18,13 @@ dataset_path = ./datasets/lego     # Directory containing the dataset
 # --------------------
 num_random_rays = 1024             # Number of random rays sampled per iteration
 chunk_size = 1024                  # Number of rays processed in a single rendering batch
-num_samples = 256                  # Number of samples along each ray
+num_samples = 128                  # Number of samples along each ray
 
 # --------------------
 # Training Parameters
 # --------------------
 num_iters = 300000                 # Total number of training iterations
-learning_rate = 1e-3               # Starting learning rate for the optimizer
+learning_rate = 1e-4               # Starting learning rate for the optimizer
 near = 2.0                         # Near bound for ray sampling
 far = 6.0                          # Far bound for ray sampling
 
@@ -37,9 +37,9 @@ save_interval = 5000               # Interval (in iterations) for saving model c
 # --------------------
 # Learning Rate Decay Parameters
 # --------------------
-lr_decay = 100                     # Number of 1000-step intervals for decay
+lr_decay = 300                     # Number of 1000-step intervals for decay
 lr_decay_factor = 0.1              # Factor to multiply the learning rate at decay
-lr_min = 5e-5                      # Minimum learning rate possible
+lr_min = 1e-5                      # Minimum learning rate possible
 
 # --------------------
 # Monitoring Parameters

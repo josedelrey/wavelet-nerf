@@ -60,6 +60,7 @@ class NeRF(nn.Module):
         self.pos_encoding_dim = pos_encoding_dim
         self.dir_encoding_dim = dir_encoding_dim
         self.softplus = nn.Softplus(beta=1.0, threshold=20.0)
+        self.relu = nn.ReLU()
 
     def forward(self,
                 points: torch.Tensor,
@@ -70,7 +71,7 @@ class NeRF(nn.Module):
         features = self.block1(points_enc)
         features = self.block2(torch.cat((features, points_enc), dim=1))
 
-        density = self.softplus(features[:, -1])
+        density = self.relu(features[:, -1])
         features = features[:, :-1]
         colors = self.rgb_head(torch.cat((features, rays_d_enc), dim=1))
 
@@ -210,9 +211,7 @@ class MFNBase(nn.Module):
     MFNBase: Multiplicative filter network base class.
     
     This is the original implementation from "Multiplicative Filter Networks"
-    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021). 
-    See: https://github.com/boschresearch/multiplicative-filter-networks/
-
+    by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021).
     Expects the child class to define the 'filters' attribute, which should be 
     a nn.ModuleList of n_layers+1 filters with output equal to hidden_size.
     """
@@ -233,8 +232,6 @@ class MFNBase(nn.Module):
                 np.sqrt(weight_scale / hidden_size),
             )
 
-        return
-
     def forward(self, x):
         out = self.filters[0](x)
         for i in range(1, len(self.filters)):
@@ -249,7 +246,7 @@ class MFNBase(nn.Module):
 
 class WaveletLayer(nn.Module):
     """
-    Fast, checkpointed WaveletLayer: recomputes heavy distance matrix on backward via checkpoint.
+    WaveletLayer: recomputes heavy distance matrix on each call.
     """
     def __init__(
         self,
@@ -283,8 +280,8 @@ class WaveletLayer(nn.Module):
         return gabor * torch.exp(-0.5 * D * self.gamma[None, :])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # checkpoint the core computation to save memory on backward
-        return cp.checkpoint(self._core, x, use_reentrant=False)
+        # direct core computation (no checkpoint)
+        return self._core(x)
 
 
 class WaveletNet(MFNBase):
@@ -374,8 +371,7 @@ class WaveletNet(MFNBase):
 
 class WaveletNeRF(nn.Module):
     """
-    NeRF-style model using a FastWaveletNet base and simple linear RGB head.
-    Provides identical interface to WaveletNeRF with much lower memory.
+    NeRF-style model using a WaveletNet base and simple linear RGB head.
     """
     def __init__(
         self,
@@ -393,7 +389,7 @@ class WaveletNeRF(nn.Module):
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
 
-        # Base MLP: FastWaveletNet processes 3D points
+        # Base MLP: WaveletNet processes 3D points
         self.base_net = WaveletNet(
             in_features=in_features,
             hidden_features=hidden_dim,
@@ -412,7 +408,7 @@ class WaveletNeRF(nn.Module):
         # Feature remap for RGB head
         self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
 
-        # Ray direction encoding size
+        # Ray direction encoding size (positional_encoding should be defined elsewhere)
         ray_enc_size = dir_encoding_dim * 6 + in_features
         self.rgb_head = nn.Sequential(
             nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),

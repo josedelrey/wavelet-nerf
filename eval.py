@@ -4,9 +4,10 @@ import argparse
 import os
 import imageio
 from tqdm import tqdm
+from collections import OrderedDict
 
 from modules.data import load_dataset, compute_rays
-from modules.models import NeRF, Siren, MultiScaleWaveletNeRF
+from modules.models import NeRF, Siren, WaveletNeRF
 from modules.rendering import render_nerf
 from modules.utils import parse_config
 from modules.camera import pose_spherical
@@ -71,19 +72,81 @@ def main():
         0,
     )
 
-    # Load the model
+    # ===== Load the model with hyperparameters from config =====
     if model_type == 'nerf':
-        model = NeRF().to(device)
+        # NeRF-specific hyperparameters
+        pos_encoding_dim = int(config.get('pos_encoding_dim', 10))
+        dir_encoding_dim = int(config.get('dir_encoding_dim', 4))
+        hidden_dim       = int(config.get('hidden_dim', 256))
+        model = NeRF(
+            pos_encoding_dim=pos_encoding_dim,
+            dir_encoding_dim=dir_encoding_dim,
+            hidden_dim=hidden_dim
+        ).to(device)
+
     elif model_type == 'siren':
-        model = Siren().to(device)
-    elif model_type == 'multiscalewavelet':
-        model = MultiScaleWaveletNeRF().to(device)
+        # Siren-specific hyperparameters
+        num_layers       = int(config.get('num_layers', 8))
+        hidden_dim       = int(config.get('siren_hidden_dim', 256))
+        dir_encoding_dim = int(config.get('siren_dir_encoding_dim', 4))
+        sigma_mul        = float(config.get('sigma_mul', 10.0))
+        rgb_mul          = float(config.get('rgb_mul', 1.0))
+        w0               = float(config.get('w0', 30.0))
+        hidden_w0        = float(config.get('hidden_w0', 1.0))
+        model = Siren(
+            num_layers=num_layers,
+            hidden_dim=hidden_dim,
+            dir_encoding_dim=dir_encoding_dim,
+            sigma_mul=sigma_mul,
+            rgb_mul=rgb_mul,
+            w0=w0,
+            hidden_w0=hidden_w0
+        ).to(device)
+
+    elif model_type in ('multiscalewavelet', 'wavelet'):
+        # WaveletNeRF-specific hyperparameters
+        in_features      = int(config.get('wave_in_features', 3))
+        hidden_dim       = int(config.get('wave_hidden_dim', 256))
+        num_layers       = int(config.get('wave_num_layers', 8))
+        dir_encoding_dim = int(config.get('wave_dir_encoding_dim', 4))
+        input_scale      = float(config.get('input_scale', 256.0))
+        weight_scale     = float(config.get('weight_scale', 1.0))
+        alpha            = float(config.get('alpha', 6.0))
+        beta             = float(config.get('beta', 0.5))
+        omega0           = float(config.get('omega0', 5.0))
+        normalized_flag  = config.get('normalized', 'True').lower() in ['true', '1', 'yes']
+        model = WaveletNeRF(
+            in_features=in_features,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            dir_encoding_dim=dir_encoding_dim,
+            input_scale=input_scale,
+            weight_scale=weight_scale,
+            alpha=alpha,
+            beta=beta,
+            omega0=omega0,
+            normalized=normalized_flag
+        ).to(device)
+
     else:
         raise ValueError(f"Invalid model type: {model_type}")
     
     # Load the model checkpoint
-    checkpoint = torch.load(model_path, map_location='cpu', weights_only=True)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    ckpt = torch.load(model_path, map_location='cpu', weights_only=True)
+    raw_state = ckpt['model_state_dict']
+    clean_state = OrderedDict()
+    for k, v in raw_state.items():
+        new_k = k[len("_orig_mod."):] if k.startswith("_orig_mod.") else k
+        clean_state[new_k] = v
+
+    # Load into your model
+    model.load_state_dict(clean_state)
+
+    # Now compile for CUDA (if available)
+    if device.type == 'cuda':
+        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
+    else:
+        print("Skipping torch.compile: CPU-only environment")
     
     # Load a dummy image to get height and width
     images_val_np, _, focal_length = load_dataset(dataset_path, mode='test', single_image=True)
