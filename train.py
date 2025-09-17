@@ -103,7 +103,6 @@ def main():
 
     # Depending on model type, pull out hyperparameters
     if model_type == 'nerf':
-        # Read NeRF‐specific keys
         pos_encoding_dim = int(config.get('pos_encoding_dim', 10))
         dir_encoding_dim = int(config.get('dir_encoding_dim', 4))
         hidden_dim     = int(config.get('hidden_dim', 256))
@@ -114,7 +113,6 @@ def main():
         ).to(device)
 
     elif model_type == 'siren':
-        # Read Siren‐specific keys
         num_layers            = int(config.get('num_layers', 8))
         hidden_dim            = int(config.get('siren_hidden_dim', 256))
         dir_encoding_dim      = int(config.get('siren_dir_encoding_dim', 4))
@@ -134,7 +132,6 @@ def main():
         ).to(device)
 
     elif model_type == 'wavelet':
-        # Read WaveletNeRF‐specific keys
         in_features        = int(config.get('wave_in_features', 3))
         hidden_dim         = int(config.get('wave_hidden_dim', 256))
         num_layers         = int(config.get('wave_num_layers', 8))

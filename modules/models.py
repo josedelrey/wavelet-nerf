@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import torch.utils.checkpoint as cp
 from typing import Tuple
 
 from modules.encoding import positional_encoding
@@ -59,7 +58,6 @@ class NeRF(nn.Module):
 
         self.pos_encoding_dim = pos_encoding_dim
         self.dir_encoding_dim = dir_encoding_dim
-        self.softplus = nn.Softplus(beta=1.0, threshold=20.0)
         self.relu = nn.ReLU()
 
     def forward(self,
@@ -264,23 +262,21 @@ class WaveletLayer(nn.Module):
             torch.distributions.gamma.Gamma(alpha, beta).sample((out_features,))
         )
         self.omega0 = omega0
-        # scale linear weights by sqrt(gamma)
+
+        # Scale linear weights by sqrt(gamma)
         self.linear.weight.data *= weight_scale * torch.sqrt(self.gamma[:, None])
         self.linear.bias.data.uniform_(-np.pi, np.pi)
 
     def _core(self, x: torch.Tensor) -> torch.Tensor:
-        # compute squared distances D
         D = (
             x.pow(2).sum(-1, keepdim=True)
             + self.mu.pow(2).sum(-1).unsqueeze(0)
             - 2 * x @ self.mu.T
         )
-        # Gabor-like response
         gabor = torch.sin(self.linear(self.omega0 * x))
         return gabor * torch.exp(-0.5 * D * self.gamma[None, :])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # direct core computation (no checkpoint)
         return self._core(x)
 
 
@@ -405,6 +401,7 @@ class WaveletNeRF(nn.Module):
 
         # Density branch
         self.density_branch = nn.Linear(hidden_dim, 1)
+
         # Feature remap for RGB head
         self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
 
@@ -422,12 +419,15 @@ class WaveletNeRF(nn.Module):
         points: torch.Tensor,
         rays_d: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # base features
+        
+        # Base features
         base_feats = self.base_net(points)
-        # density
+
+        # Density
         raw_sigma = self.density_branch(base_feats)
         density = torch.relu(raw_sigma.squeeze(-1))
-        # rgb
+
+        # Rgb
         remapped = self.feature_remap(base_feats)
         dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
         rgb_in = torch.cat([remapped, dir_enc], dim=-1)

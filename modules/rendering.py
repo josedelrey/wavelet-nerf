@@ -208,10 +208,12 @@ def render_nerf(
         else:
             # Uniform sampling: generate evenly spaced sample positions between near and far.
             samples = torch.linspace(near, far, num_samples, device=device)
+            
             # Compute intervals (deltas) between consecutive sample positions.
             deltas = samples[1:] - samples[:-1]
             delta_inf = torch.tensor([1e10], device=device, dtype=deltas.dtype)
             deltas = torch.cat([deltas, delta_inf], dim=0)
+
             # Compute the actual positions along the rays.
             sample_positions = (
                 rays_o_chunk.unsqueeze(1)

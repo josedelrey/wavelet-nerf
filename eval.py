@@ -72,9 +72,8 @@ def main():
         0,
     )
 
-    # ===== Load the model with hyperparameters from config =====
+    # Load the model with hyperparameters from config
     if model_type == 'nerf':
-        # NeRF-specific hyperparameters
         pos_encoding_dim = int(config.get('pos_encoding_dim', 10))
         dir_encoding_dim = int(config.get('dir_encoding_dim', 4))
         hidden_dim       = int(config.get('hidden_dim', 256))
@@ -85,7 +84,6 @@ def main():
         ).to(device)
 
     elif model_type == 'siren':
-        # Siren-specific hyperparameters
         num_layers       = int(config.get('num_layers', 8))
         hidden_dim       = int(config.get('siren_hidden_dim', 256))
         dir_encoding_dim = int(config.get('siren_dir_encoding_dim', 4))
@@ -104,7 +102,6 @@ def main():
         ).to(device)
 
     elif model_type in ('multiscalewavelet', 'wavelet'):
-        # WaveletNeRF-specific hyperparameters
         in_features      = int(config.get('wave_in_features', 3))
         hidden_dim       = int(config.get('wave_hidden_dim', 256))
         num_layers       = int(config.get('wave_num_layers', 8))
@@ -142,7 +139,7 @@ def main():
     # Load into your model
     model.load_state_dict(clean_state)
 
-    # Now compile for CUDA (if available)
+    # Compile for CUDA (if available)
     if device.type == 'cuda':
         model = torch.compile(model, backend="inductor", mode="reduce-overhead")
     else:
@@ -164,11 +161,14 @@ def main():
     model.eval()
     for i in render_loop:
         single_val_c2w = render_poses[i:i + 1]
-        rays_o_val_np, rays_d_val_np, _ = compute_rays(single_val_image, single_val_c2w, focal_length)
+        single_val_c2w_np = single_val_c2w.cpu().numpy()
+        rays_o_val_np, rays_d_val_np, _ = compute_rays(single_val_image, single_val_c2w_np, focal_length)
         rays_o_val = torch.from_numpy(rays_o_val_np).float().to(device).squeeze(0)
         rays_d_val = torch.from_numpy(rays_d_val_np).float().to(device).squeeze(0)
 
-        torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         with torch.no_grad():
             pred_val_rgb = render_nerf(
                 model,
