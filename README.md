@@ -17,7 +17,7 @@ pip install -r requirements.txt
 ```
 
 <details>
-  <summary>Dependencies (click to expand)</summary>
+  <summary>Dependencies</summary>
 
   ## Dependencies
   - Python 3.8+
@@ -76,42 +76,48 @@ python run_nerf.py --config config/<your_config>.txt --resume ./models/<exp>/<ex
 ```
 
 ### More Datasets
-To play with other scenes presented in the paper, download the data [here](https://drive.google.com/drive/folders/128yBriW1IG_3NJ5Rp7APSTZsJqdJdfc1). Place the downloaded dataset according to the following directory structure:
-```
-├── configs                                                                                                       
-│   ├── ...                                                                                     
-│                                                                                               
-├── data                                                                                                                                                                                                       
-│   ├── nerf_llff_data                                                                                                  
-│   │   └── fern                                                                                                                             
-│   │   └── flower  # downloaded llff dataset                                                                                  
-│   │   └── horns   # downloaded llff dataset
-|   |   └── ...
-|   ├── nerf_synthetic
-|   |   └── lego
-|   |   └── ship    # downloaded synthetic dataset
-|   |   └── ...
-```
 
----
+To use other scenes from the **NeRF Synthetic dataset**, you can download all datasets from:
 
-To train NeRF on different datasets: 
+[https://www.kaggle.com/datasets/nguyenhung1903/nerf-synthetic-dataset](https://www.kaggle.com/datasets/nguyenhung1903/nerf-synthetic-dataset)
+
+Unzip them and place the scene folders inside the `datasets/` directory of this repository.  
+The structure should look like this:
 
 ```
-python run_nerf.py --config configs/{DATASET}.txt
+
+datasets/
+├── lego/
+├── chair/
+├── drums/
+├── ficus/
+├── hotdog/
+├── materials/
+├── mic/
+└── ship/
+
 ```
 
-replace `{DATASET}` with `trex` | `horns` | `flower` | `fortress` | `lego` | etc.
-
----
-
-To test NeRF trained on different datasets: 
+To train on a different dataset, edit the `dataset_path` parameter in the config file.  
+For example, to train on **chair**, set:
 
 ```
-python run_nerf.py --config configs/{DATASET}.txt --render_only
+
+dataset\_path = ./datasets/chair
+
+````
+
+Then run:
+
+```bash
+python run_nerf.py --config config/config_nerf_lego.txt
+````
+
+(Replace with the config file corresponding to the model variant you want to use.)
+
 ```
 
-replace `{DATASET}` with `trex` | `horns` | `flower` | `fortress` | `lego` | etc.
+
 
 ## Method
 
