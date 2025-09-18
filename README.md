@@ -31,15 +31,13 @@ pip install -r requirements.txt
 
 ## How To Run?
 
-Sure — here’s the **plain text** of the Markdown snippet (no formatting applied by me, just the raw text):
-
-````
 ### Quick Start
 
 Download data for the `lego` dataset.
+
 ```bash
 bash download_dataset.sh
-````
+```
 
 Train the **baseline NeRF** on `lego`:
 
