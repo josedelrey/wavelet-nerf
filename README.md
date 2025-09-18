@@ -113,26 +113,6 @@ python run_nerf.py --config configs/{DATASET}.txt --render_only
 
 replace `{DATASET}` with `trex` | `horns` | `flower` | `fortress` | `lego` | etc.
 
-
-### Pre-trained Models
-
-You can download the pre-trained models [here](https://drive.google.com/drive/folders/1jIr8dkvefrQmv737fFm2isiT6tqpbTbv). Place the downloaded directory in `./logs` in order to test it later. See the following directory structure for an example:
-
-```
-├── logs 
-│   ├── fern_test
-│   ├── flower_test  # downloaded logs
-│   ├── trex_test    # downloaded logs
-```
-
-### Reproducibility 
-
-Tests that ensure the results of all functions and training loop match the official implentation are contained in a different branch `reproduce`. One can check it out and run the tests:
-```
-git checkout reproduce
-py.test
-```
-
 ## Method
 
 [NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis](http://tancik.com/nerf)  

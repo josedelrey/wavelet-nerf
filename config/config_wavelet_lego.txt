@@ -11,7 +11,7 @@ experiment_name = wavelet          # Name of this experiment's log subfolder
 # --------------------
 # Dataset Parameters
 # --------------------
-dataset_path = ./dataset/lego     # Directory containing the dataset
+dataset_path = ./datasets/lego     # Directory containing the dataset
 
 # --------------------
 # Sampling Parameters
