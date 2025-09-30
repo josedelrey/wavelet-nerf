@@ -40,19 +40,19 @@ bash download_dataset.sh
 Train the **baseline NeRF** on `lego`:
 
 ```bash
-python run_nerf.py --config config/config_nerf_lego.txt
+python train.py --config config/config_nerf_lego.txt
 ```
 
 Train the **SIREN-NeRF** on `lego`:
 
 ```bash
-python run_nerf.py --config config/config_siren_lego.txt
+python train.py --config config/config_siren_lego.txt
 ```
 
 Train the **MFN (WaveletNet) NeRF** on `lego`:
 
 ```bash
-python run_nerf.py --config config/config_wavelet_lego.txt
+python train.py --config config/config_wavelet_lego.txt
 ```
 
 Logs are saved in:
@@ -70,7 +70,7 @@ Model checkpoints are saved in:
 Resume training from a checkpoint:
 
 ```bash
-python run_nerf.py --config config/<your_config>.txt --resume ./models/<exp>/<exp>_050000.pth
+python train.py --config config/<your_config>.txt --resume ./models/<exp>/<exp>_050000.pth
 ```
 
 ### More Datasets
@@ -104,7 +104,7 @@ dataset_path = ./datasets/chair
 Then run:
 
 ```bash
-python run_nerf.py --config config/config_nerf_chair.txt
+python train.py --config config/config_nerf_chair.txt
 ```
 
 
