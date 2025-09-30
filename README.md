@@ -29,7 +29,7 @@ conda activate nerf-pytorch
 
 ## How To Run?
 
-### Quick Start
+### Training
 
 Download data for the `lego` dataset.
 
@@ -107,6 +107,28 @@ Then run:
 python train.py --config config/config_nerf_chair.txt
 ```
 
+
+### Render a video
+
+Once you have trained a model, render frames with:
+```bash
+python eval.py \
+  --config config/config_nerf_lego.txt \
+  --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
+  --output ./renders/nerf_lego_eval
+```
+
+Then you can make a video with this ffmpeg command:
+```bash
+ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 18 ./renders/nerf_lego_eval.mp4
+```
+
+Notes:
+
+* `eval.py` auto reads the model type from the checkpoint. It supports NeRF, SIREN, and WaveletNeRF.
+* Defaults that you can tweak in the config: `near`, `far`, `num_samples_eval`, `chunk_size`, `num_render_poses` (camera spins around the scene), and directories.
+* Frames are written to `--output`. The script uses a white background and disables stratified sampling for stable evaluation.
 
 ## Method
 

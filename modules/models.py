@@ -45,7 +45,7 @@ class NeRF(nn.Module):
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim + 1)  # Density output
+            nn.Linear(hidden_dim, hidden_dim + 1)
         )
 
         # RGB head combining features with ray direction
@@ -58,7 +58,7 @@ class NeRF(nn.Module):
 
         self.pos_encoding_dim = pos_encoding_dim
         self.dir_encoding_dim = dir_encoding_dim
-        self.relu = nn.ReLU()
+        self.softplus = nn.Softplus(beta=1.0, threshold=20.0)
 
     def forward(self,
                 points: torch.Tensor,
@@ -69,7 +69,7 @@ class NeRF(nn.Module):
         features = self.block1(points_enc)
         features = self.block2(torch.cat((features, points_enc), dim=1))
 
-        density = self.relu(features[:, -1])
+        density = self.softplus(features[:, -1])
         features = features[:, :-1]
         colors = self.rgb_head(torch.cat((features, rays_d_enc), dim=1))
 

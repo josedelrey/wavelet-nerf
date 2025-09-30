@@ -14,3 +14,6 @@ dependencies:
   - matplotlib
   - scikit-learn
   - tqdm
+  - tensorboard
+  - imageio
+  - "mkl<2024.1"
