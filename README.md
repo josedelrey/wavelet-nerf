@@ -139,15 +139,3 @@ We acknowledge the original authors of NeRF for their groundbreaking work:
     primaryClass={cs.CV}
 }
 ```
-
-If you find this PyTorch implementation, please also cite:
-```
-@misc{lin2020nerfpytorch,
-  title={NeRF-PyTorch: SIREN and MFN Variants},
-  author={del Rey, Jose},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished={\url{https://github.com/josedelrey/nerf-pytorch/}},
-  year={2025}
-}
-```
