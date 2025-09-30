@@ -1,13 +1,16 @@
-name: nerf
+name: nerf-pytorch
 channels:
+  - pytorch
+  - nvidia
   - defaults
 dependencies:
+  - python=3.12
+  - pytorch
+  - torchvision
+  - torchaudio
+  - pytorch-cuda=12.1
+  - ipykernel
   - ipywidgets
   - matplotlib
   - scikit-learn
   - tqdm
-  - python=3.12
-  - pytorch-cuda=12.1
-  - torchaudio
-  - torchvision
-  - ipykernel
