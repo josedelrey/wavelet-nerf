@@ -103,10 +103,8 @@ dataset_path = ./datasets/chair
 Then run:
 
 ```bash
-python run_nerf.py --config config/config_nerf_lego.txt
+python run_nerf.py --config config/config_nerf_chair.txt
 ```
-
-(Replace with the config file corresponding to the model variant you want to use.)
 
 
 ## Method
