@@ -112,15 +112,16 @@ python train.py --config config/config_nerf_chair.txt
 
 Once you have trained a model, render frames with:
 ```bash
-python eval.py --config config/config_nerf_lego.txt
-               --checkpoint ./models/nerf_lego/nerf_lego_250000.pth
-               --output ./renders/nerf_lego_eval
+python eval.py \
+  --config config/config_nerf_lego.txt \
+  --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
+  --output ./renders/nerf_lego_eval
 ```
 
 Then you can make a video with this ffmpeg command:
 ```bash
-ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png
-       -c:v libx264 -pix_fmt yuv420p -crf 18 ./renders/nerf_lego_eval.mp4
+ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png \
+  -c:v libx264 -pix_fmt yuv420p -crf 18 ./renders/nerf_lego_eval.mp4
 ```
 
 Notes:
