@@ -8,7 +8,6 @@
 ## Installation
 
 ```
-# clone the repo
 git clone https://github.com/josedelrey/nerf-pytorch.git
 cd nerf-pytorch
 conda env create -f environment.yml
