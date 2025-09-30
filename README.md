@@ -8,9 +8,11 @@
 ## Installation
 
 ```
+# clone the repo
 git clone https://github.com/josedelrey/nerf-pytorch.git
 cd nerf-pytorch
-pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate nerf
 ```
 
 <details>
