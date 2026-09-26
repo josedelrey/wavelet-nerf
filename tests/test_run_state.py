@@ -7,10 +7,10 @@ from unittest.mock import patch
 import numpy as np
 import torch
 
-from modules.data import PixelRaySampler
-from modules.run_state import (atomic_write, capture_rng,
+from wavelet_nerf.data import PixelRaySampler
+from wavelet_nerf.run_state import (atomic_write, capture_rng,
                                configure_reproducibility, prepare_output, restore_rng)
-from modules.utils import save_checkpoint
+from wavelet_nerf.utils import save_checkpoint
 
 
 class RunStateTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class RunStateTests(unittest.TestCase):
             file.write(b'incomplete')
             raise OSError('disk full')
 
-        with patch('modules.utils.torch.save', side_effect=fail), self.assertRaisesRegex(OSError, 'disk full'):
+        with patch('wavelet_nerf.utils.torch.save', side_effect=fail), self.assertRaisesRegex(OSError, 'disk full'):
             save_checkpoint(1, model, optimizer, scheduler, str(self.root), 'test', 'run')
         self.assertEqual(path.read_bytes(), previous)
         self.assertEqual(list(self.root.iterdir()), [path])
@@ -68,7 +68,7 @@ class RunStateTests(unittest.TestCase):
     def test_replace_failure_preserves_previous_artifact(self):
         path = self.root / 'config.yaml'
         path.write_text('previous')
-        with patch('modules.run_state.os.replace', side_effect=OSError('replace failed')), \
+        with patch('wavelet_nerf.run_state.os.replace', side_effect=OSError('replace failed')), \
              self.assertRaises(OSError):
             atomic_write(path, lambda file: file.write(b'new'))
         self.assertEqual(path.read_text(), 'previous')

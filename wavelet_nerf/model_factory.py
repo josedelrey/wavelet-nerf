@@ -1,6 +1,6 @@
 """One model constructor shared by training and evaluation."""
-from modules.configuration import validate_resolved_config
-from modules.models import LegacyNeRF, NeRF, Siren, WaveletNeRF
+from wavelet_nerf.configuration import validate_resolved_config
+from wavelet_nerf.models import LegacyNeRF, NeRF, Siren, WaveletNeRF
 
 
 def model_hyperparameters(config):

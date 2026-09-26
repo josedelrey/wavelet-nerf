@@ -6,7 +6,7 @@ The projection near plane is distinct from the subsequent sampling bounds [0, 1]
 
 import numpy as np
 
-from modules.data import camera_rays
+from wavelet_nerf.data import camera_rays
 
 
 def project_rays_ndc(rays_o, rays_d, height, width, focal, near=1.0, *, focal_y=None,

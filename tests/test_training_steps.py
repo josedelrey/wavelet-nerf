@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 import train
-from modules.datasets import SceneSplit
+from wavelet_nerf.datasets import SceneSplit
 
 
 class TinyModel(torch.nn.Module):
@@ -87,7 +87,7 @@ class TrainingStepTests(unittest.TestCase):
             stack.enter_context(patch.object(train, 'create_model', side_effect=lambda config: TinyModel()))
             stack.enter_context(patch.object(train, 'DataLoader', cpu_loader))
             stack.enter_context(patch.object(train, 'render_nerf', render))
-            stack.enter_context(patch('modules.rendering.render_nerf', render))
+            stack.enter_context(patch('wavelet_nerf.rendering.render_nerf', render))
             writer_factory = stack.enter_context(patch.object(train, 'SummaryWriter'))
             progress = stack.enter_context(patch.object(train, 'tqdm'))
             train.main()

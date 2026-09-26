@@ -3,16 +3,18 @@ import numpy as np
 from torch import Tensor
 from typing import Tuple
 
-from modules.scene import SceneNormalization
-from modules.models import NeRF, LegacyNeRF
-from modules.nerf_reference import render_reference_nerf, sample_depths
+from wavelet_nerf.scene import SceneNormalization
+from wavelet_nerf.models import NeRF, LegacyNeRF
+from wavelet_nerf.nerf_reference import render_reference_nerf, sample_depths
+from wavelet_nerf.render_validation import validate_bounds, validate_count, validate_rays, validate_sampling_options
 
 
 def stratified_sampling(
     near: float,
     far: float,
     num_bins: int,
-    device: str = 'cpu') -> Tensor:
+    device: str = 'cpu', *, num_rays: int | None = None,
+    dtype: torch.dtype = torch.float32) -> Tensor:
     """
     Perform stratified sampling within a given depth range.
 
@@ -24,11 +26,20 @@ def stratified_sampling(
 
     Returns:
         Tensor: Stratified samples within [near, far].
+            Shape is [num_rays, num_bins] when num_rays is supplied; each ray
+            receives independent offsets. Otherwise returns one depth vector.
     """
-    bins = torch.linspace(near, far, num_bins + 1, device=device)
+    validate_bounds(near, far)
+    validate_count(num_bins, 'num_bins')
+    if num_rays is not None:
+        validate_count(num_rays, 'num_rays')
+    if dtype not in (torch.float32, torch.float64):
+        raise ValueError('Depth sampling requires float32 or float64 geometry')
+    bins = torch.linspace(near, far, num_bins + 1, device=device, dtype=dtype)
     lower = bins[:-1]
     upper = bins[1:]
-    random_offsets = torch.rand(num_bins, device=device)
+    shape = (num_bins,) if num_rays is None else (num_rays, num_bins)
+    random_offsets = torch.rand(shape, device=device, dtype=dtype)
     return lower + (upper - lower) * random_offsets
 
 
@@ -53,11 +64,15 @@ def generate_sample_positions(
     Returns:
         Tuple[Tensor, Tensor]:
             - sample_positions (Tensor): Sample positions for each ray.
-            - deltas (Tensor): Intervals between sampled positions.
+            - deltas (Tensor): Intervals in ray-parameter space; multiply by the
+              geometry direction norm before volume integration.
     """
+    validate_rays(rays_o_batch, rays_d_batch)
+    validate_bounds(near, far)
+    validate_count(num_samples, 'num_samples', minimum=2 if reference else 1)
     depths = (sample_depths(rays_d_batch, near, far, num_samples, perturb=True)
-              if reference else stratified_sampling(near, far, num_samples, device)
-              .expand(len(rays_d_batch), -1))
+              if reference else stratified_sampling(near, far, num_samples, rays_d_batch.device,
+                                                    num_rays=len(rays_d_batch), dtype=rays_d_batch.dtype))
     deltas = torch.cat((depths[:, 1:] - depths[:, :-1],
                         torch.full_like(depths[:, :1], 1e10)), dim=-1)
     sample_positions = rays_o_batch[:, None] + depths[..., None] * rays_d_batch[:, None]
@@ -116,7 +131,7 @@ def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
         Tensor: Accumulated transmittance along each ray.
     """
     accum_trans = torch.cumprod(betas, dim=1)
-    init = torch.ones(accum_trans.shape[0], 1, device=accum_trans.device)
+    init = torch.ones_like(accum_trans[:, :1])
     return torch.cat((init, accum_trans[:, :-1]), dim=1)
 
 
@@ -137,6 +152,10 @@ def composite_volume(
     Returns:
         Tensor: Composite RGB colors for each ray.
     """
+    # Keep integration at least float32 even if a network query is autocast.
+    dtype = torch.promote_types(torch.promote_types(colors.dtype, densities.dtype), deltas.dtype)
+    dtype = torch.promote_types(dtype, torch.float32)
+    colors, densities, deltas = (value.to(dtype) for value in (colors, densities, deltas))
     # alpha_i = 1 - exp(-sigma_i * delta_i)
     alpha = 1 - torch.exp(-densities * deltas)
 
@@ -191,6 +210,9 @@ def render_nerf(
                                                   independent of near/far; defaults to identity.
         view_directions (Tensor, optional): Original unit world directions for
             appearance when geometry rays are in NDC. Defaults to unit rays_d.
+        Geometry rays must be finite, nonzero float32/float64 N x 3 tensors.
+            Directions need not have unit length: integration multiplies depth
+            intervals by their norm. Bounds parameterize origins + depth * directions.
         num_importance (int, optional): Additional fine samples for reference NeRF.
         return_aux (bool): Return reference coarse/fine outputs for the two losses.
             Scene normalization is ignored for reference NeRF, matching upstream.
@@ -202,8 +224,11 @@ def render_nerf(
     Returns:
         Tensor: A tensor of shape [num_rays, 3] containing the rendered RGB colors.
     """
-    if netchunk <= 0 or chunk_size <= 0:
-        raise ValueError('Ray and network query chunk sizes must be positive')
+    validate_count(netchunk, 'netchunk')
+    validate_count(chunk_size, 'chunk_size')
+    validate_bounds(near, far, lindisp=lindisp)
+    validate_rays(rays_o, rays_d, view_directions)
+    validate_sampling_options(perturb, raw_noise_std)
     if output_device is not None and torch.is_grad_enabled():
         raise ValueError('output_device is for inference; use torch.no_grad()')
     if view_directions is None:
@@ -215,6 +240,9 @@ def render_nerf(
     ordinary_model = getattr(model, '_orig_mod', model)
     if num_samples is None:
         num_samples = 64 if isinstance(ordinary_model, NeRF) else 256
+    validate_count(num_samples, 'num_samples', minimum=2)
+    if num_importance is not None:
+        validate_count(num_importance, 'num_importance', minimum=0)
     if isinstance(ordinary_model, NeRF):
         outputs = render_reference_nerf(
             model, rays_o, rays_d, near, far, num_samples=num_samples,
@@ -244,7 +272,7 @@ def render_nerf(
             )
         else:
             # Uniform sampling: generate evenly spaced sample positions between near and far.
-            samples = torch.linspace(near, far, num_samples, device=device)
+            samples = torch.linspace(near, far, num_samples, device=device, dtype=rays_d_chunk.dtype)
             
             # Compute intervals (deltas) between consecutive sample positions.
             deltas = samples[1:] - samples[:-1]
@@ -295,13 +323,12 @@ def render_nerf(
 def render_camera(model, height, width, pose, intrinsics, near, far, *, dataset_type='blender',
                   chunk_size=8192, device='cpu', **options):
     """Render one camera with chunk-sized ray/GPU storage and a CPU RGB buffer."""
-    from modules.data import CameraRayGenerator
+    from wavelet_nerf.data import CameraRayGenerator
     ordinary = getattr(model, '_orig_mod', model)
     generator = CameraRayGenerator(height, width, np.asarray(pose).reshape(1, 4, 4),
                                    np.asarray(intrinsics).reshape(1, 3, 3), dataset_type=dataset_type,
                                    normalize=not isinstance(ordinary, NeRF))
-    if chunk_size < 1:
-        raise ValueError('chunk_size must be positive')
+    validate_count(chunk_size, 'chunk_size')
     output = None
     for start in range(0, height * width, chunk_size):
         pixels = np.arange(start, min(start + chunk_size, height * width))

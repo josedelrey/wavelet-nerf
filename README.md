@@ -1,12 +1,18 @@
 # Wavelet-NeRF
 
-
-[NeRF](http://www.matthewtancik.com/nerf) (Neural Radiance Fields) is a method that achieves state-of-the-art results for synthesizing novel views of complex scenes. This project is a PyTorch implementation of NeRF, extended with [SIREN-based](https://arxiv.org/abs/2006.09661) and [MFN-based](https://arxiv.org/abs/2011.13961) NeRF variants. The code is based on the authors' original TensorFlow implementation [here](https://github.com/bmild/nerf).
+PyTorch research code for novel-view synthesis with [NeRF](https://github.com/bmild/nerf),
+[SIREN](https://arxiv.org/abs/2006.09661) and wavelet multiplicative filter networks
+based on [MFNs](https://arxiv.org/abs/2011.13961). The supplied experiments cover
+synthetic Lego (Blender format) and forward-facing Fern (LLFF format).
 
 ![Lego novel-view render generated with this repository](imgs/nerf_lego.gif)
 
-Lego render created by José del Rey using this repository and the NeRF Synthetic
-dataset.
+Historical Lego render created by José del Rey using this repository and the
+NeRF Synthetic dataset. The exact model variant, configuration, checkpoint and
+training step were not recorded with this GIF. It predates the current reference
+baseline and is an illustration, not a reproducible result from the supplied
+configs. New result images should identify their model, config, completed-update
+count, checkpoint and Git revision; keep the run's `experiment.json` alongside them.
 
 ## Installation
 
@@ -23,6 +29,10 @@ uv sync --locked
 including the development linter. Add `--no-dev` to both `uv sync` and `uv run`
 commands to omit development tools. `uv run` uses this environment without
 activating it.
+
+Run all commands in this README from the repository root. On Windows, the
+dataset download step needs a Bash environment with `wget` and `unzip` (for
+example, WSL), or install the archive's two scene directories manually.
 
 Dependencies and project metadata are defined in `pyproject.toml`. The project
 is configured with `package = false`: uv manages its dependencies without
@@ -59,14 +69,12 @@ The CUDA install selection resolves to `2.14.0+cu130`. CUDA rendering was checke
 on an RTX 4070 Laptop GPU (8 GB, compute capability 8.9) with driver 595.91.07;
 GPU access required running outside the verification sandbox.
 
-## How To Run?
-
-### Training
+## Datasets
 
 Download the original NeRF example archive containing the synthetic `lego`
 scene and the LLFF `fern` scene. Requires Bash, `wget`, and `unzip`.
 
-```
+```bash
 bash download_dataset.sh
 ```
 
@@ -74,6 +82,75 @@ The script places the scenes in `datasets/lego/` and `datasets/fern/`, relative
 to the script's location. Existing scene paths are preserved, and rerunning the
 script downloads only when a scene is missing. Failed downloads, extraction,
 or archive validation stop the script and remove its temporary files.
+
+The expected scene contents are:
+
+```text
+datasets/
+├── lego/
+│   ├── transforms_train.json
+│   ├── transforms_val.json
+│   ├── transforms_test.json
+│   ├── train/                 # RGBA PNG training images
+│   ├── val/                   # RGBA PNG validation images
+│   └── test/                  # RGBA PNG test images
+└── fern/
+    ├── poses_bounds.npy       # One camera/intrinsics/bounds row per image
+    ├── images/                # Original images in lexicographic pose order
+    ├── images_4/              # Optional cached factor-4 images
+    └── images_8/              # Optional cached factor-8 images
+```
+
+The downloader includes both cached Fern resolutions when present in the
+archive. Dataset files are ignored by Git and are not part of the repository.
+Python reads the images directly; ImageMagick is not needed.
+
+## Quick CPU smoke run
+
+After installation and downloading the datasets, these checked-in configs run
+two updates with small NeRF networks at factor-32 resolution. They exercise the
+workflow and do not produce trained, benchmark-quality results:
+
+```bash
+uv run --locked python train.py --config config/smoke/config_nerf_lego.yaml
+uv run --locked python train.py --config config/smoke/config_nerf_fern.yaml
+```
+
+Exercise resume from the first completed update; `num_iters: 2` is the total
+target, so this performs one further update:
+
+```bash
+uv run --locked python train.py --config config/smoke/config_nerf_lego.yaml \
+  --resume models/nerf_lego_smoke/nerf_lego_smoke_000001.pth
+uv run --locked python train.py --config config/smoke/config_nerf_fern.yaml \
+  --resume models/nerf_fern_smoke/nerf_fern_smoke_000001.pth
+```
+
+Evaluate every test view, then render two novel-view frames for each scene:
+
+```bash
+uv run --locked python eval.py --mode test \
+  --checkpoint models/nerf_lego_smoke/nerf_lego_smoke_000002.pth \
+  --output renders/lego_smoke_test
+uv run --locked python eval.py --mode test \
+  --checkpoint models/nerf_fern_smoke/nerf_fern_smoke_000002.pth \
+  --output renders/fern_smoke_test
+uv run --locked python eval.py --mode render \
+  --checkpoint models/nerf_lego_smoke/nerf_lego_smoke_000002.pth \
+  --output renders/lego_smoke_render
+uv run --locked python eval.py --mode render \
+  --checkpoint models/nerf_fern_smoke/nerf_fern_smoke_000002.pth \
+  --output renders/fern_smoke_render
+```
+
+Fresh training and evaluation refuse nonempty output directories. To repeat a
+smoke run, add `--overwrite` to its training and evaluation commands; resume
+continues existing run directories without that flag. For an automated check
+of all three model families on both scenes, see [example verification](#verify-the-downloaded-examples).
+
+## Full experiments
+
+### Configuration and runtime
 
 Choose `dataset_type: blender` for NeRF Synthetic scenes such as Lego, or
 `dataset_type: llff` for forward-facing LLFF scenes such as Fern. Both formats
@@ -123,7 +200,7 @@ training also accepts `--num-workers`. CLI values override YAML. For example:
 
 ```bash
 uv run --locked python train.py --config config/config_siren_lego.yaml --device cpu --no-compile --num-workers 0
-uv run --locked --no-group cpu --group cu130 python eval.py --checkpoint models/nerf/nerf_050000.pth --device cuda:0 --compile
+uv run --locked --no-group cpu --group cu130 python eval.py --checkpoint models/nerf_lego/nerf_lego_050000.pth --device cuda:0 --compile
 ```
 
 Runtime choices can change on resume and evaluation; a checkpoint's device and
@@ -151,6 +228,26 @@ the models and volume integration retain float32 arithmetic.
 Inductor rendering and backward passes have been checked for NeRF, SIREN and
 Wavelet on both PyTorch `2.14.0+cpu` and `2.14.0+cu130` on the hardware above.
 
+### Training
+
+Run these longer experiments after checking the smoke workflow. The CPU install
+works, but full training is substantially more demanding than the smoke runs;
+use the CUDA group flags from [installation](#installation) for an NVIDIA GPU.
+All checkpoint examples below assume the indicated update has been reached.
+
+| Configuration in `config/` | Experiment directory name | Target updates | Downsampling |
+| --- | --- | ---: | ---: |
+| `config_nerf_lego.yaml` | `nerf_lego` | 500,000 | 1 |
+| `config_siren_lego.yaml` | `siren_lego` | 300,000 | 1 |
+| `config_wavelet_lego.yaml` | `wavelet_lego` | 300,000 | 1 |
+| `config_nerf_fern.yaml` | `nerf_fern_quickstart` | 200,000 | 8 |
+| `config_nerf_fern_paper.yaml` | `nerf_fern_paper` | 200,000 | 4 |
+| `config_siren_fern.yaml` | `siren_fern` | 300,000 | 8 |
+| `config_wavelet_fern.yaml` | `wavelet_fern` | 300,000 | 8 |
+
+The directory name is used under both `models/` and `logs/`; checkpoint filenames
+repeat it and end in the completed-update count, padded to at least six digits.
+
 Train the **baseline NeRF** on `lego`:
 
 ```
@@ -175,6 +272,12 @@ Train on **Fern** using one of the corresponding configs:
 uv run --locked python train.py --config config/config_nerf_fern.yaml
 uv run --locked python train.py --config config/config_siren_fern.yaml
 uv run --locked python train.py --config config/config_wavelet_fern.yaml
+```
+
+To run the alternative factor-4 Fern baseline:
+
+```bash
+uv run --locked python train.py --config config/config_nerf_fern_paper.yaml
 ```
 
 LLFF scenes require `poses_bounds.npy` and RGB images in `images/`, or an
@@ -208,7 +311,7 @@ the spiral settings and render intrinsics. `eval.py --mode render` reconstructs
 the trajectory from those values without loading the dataset or a dummy image.
 `--mode test` renders the actual held-out camera poses against their images.
 
-`modules.datasets.load_scene` returns a `SceneData` containing RGB images,
+`wavelet_nerf.datasets.load_scene` returns a `SceneData` containing RGB images,
 OpenGL camera-to-world poses, per-view 3×3 intrinsics, camera-depth bounds,
 source indices and paths, explicit splits, the source-world-to-scene transform,
 sampling bounds, and render poses/path settings. `.split(name)` selects a
@@ -289,12 +392,7 @@ training sampling and learning-rate settings, or dataset cameras/splits. You can
 change run length, output paths and logging intervals, or relocate the same dataset.
 The saved scene transform takes precedence over config scene settings.
 
-Render a new checkpoint without the original config or dataset images:
-
-```bash
-uv run --locked python eval.py --checkpoint ./models/<exp>/<exp>_050000.pth
-```
-
+New checkpoints can render without the original config or dataset images.
 For the baseline examples, render a Lego orbit or a Fern spiral:
 
 ```bash
@@ -388,6 +486,26 @@ weights are merged with coarse depths before querying the separate fine network.
 Training minimizes coarse RGB MSE plus fine RGB MSE; evaluation renders the fine
 network with deterministic sampling. LLFF uses NDC geometry with world viewing
 directions, while Blender uses world geometry without a scene normalization.
+
+All renderers require nonempty, finite `N x 3` geometry rays in matching float32
+or float64 dtype. Geometry directions may be nonunit: positions use
+`origin + depth * direction`, and integration multiplies depth intervals by the
+direction norm. Explicit appearance directions must be unit world directions.
+Bounds require finite `0 <= near < far`; inverse-depth sampling also requires
+`near > 0`. Coarse sample counts must be at least two (three for reference
+importance sampling), and ray/network chunk counts must be positive integers.
+
+Training depth jitter is independent for every ray, including legacy models.
+Legacy models retain their equal-width sampling bins but no longer share offsets
+across a chunk, so their stochastic training trajectory changes from older code.
+Fixed seeds reproduce a fixed execution configuration; changing chunk sizes may
+change stochastic draws, particularly with CUDA and coarse/fine sampling.
+Deterministic evaluation is invariant to chunk boundaries within numerical
+tolerance. Model queries use `model(...)`, preserving PyTorch hooks.
+Volume integration preserves float64 or uses at least float32; geometry in
+float16/bfloat16 is rejected. This numeric policy does not establish mixed
+precision training support. PSNR returns positive infinity for zero MSE without
+numerical warnings and rejects negative or nonfinite MSE.
 
 The Lego config follows the
 [published Blender settings](https://github.com/bmild/nerf/blob/master/paper_configs/blender_config.txt):
@@ -554,13 +672,20 @@ frames and `verification.json` in a fresh directory under
 ignored by Git. `--factor` and `--output` can change verification resolution
 and destination; the example configs themselves are never modified.
 
-This check passed on the official archive on 2026-09-26 for all six cases:
+This check passed on the official archive on 2026-09-27 for all six cases:
 200 Lego test images per model at 25×25 and three held-out Fern images per model
 at 94×126. The downloader installed both scenes, retained Fern's cached factor-4
 and factor-8 images, and preserved existing scene paths on rerun. This verifies
 the CPU execution workflow on actual data. Full training at the example
 resolutions, GPU runs on the downloaded scenes and reproduction of benchmark scores have not been
 verified by this check.
+
+The [checked-in smoke commands](#quick-cpu-smoke-run) were also verified on
+2026-09-27 in a fresh local clone with a separate `uv sync --locked` CPU
+environment (Python 3.11.16, PyTorch 2.14.0+cpu). That check reused the downloaded
+official scene data and covered both scenes' training, resume, all test views,
+novel rendering, FFmpeg conversion and TensorBoard serving both runs. It did
+not redownload the archive or run the full training budgets.
 
 ### Render a video
 
@@ -576,17 +701,34 @@ uv run --locked python eval.py \
 Then you can make a video with this ffmpeg command:
 ```
 ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png \
+  -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" \
   -c:v libx264 -pix_fmt yuv420p -crf 18 ./renders/nerf_lego_eval.mp4
 ```
 
-FFmpeg is an external command required only for this video conversion step.
+FFmpeg with the `libx264` encoder is required only for video conversion. Padding
+ensures even dimensions for YUV 4:2:0, including downsampled images. For Fern,
+use `./renders/nerf_fern_spiral/frame_%04d.png` as the input and choose a Fern
+output filename. `-y` replaces an existing video file.
+
+### TensorBoard
+
 Inspect training logs with:
 
 ```bash
 uv run --locked tensorboard --logdir logs
 ```
 
+Open the local URL printed by TensorBoard (normally `http://localhost:6006`).
+Each experiment appears under its configured name, with training scalars and
+validation images. Smoke runs use `nerf_lego_smoke` and `nerf_fern_smoke`. If
+using the CUDA environment, keep the same accelerator group flags on the
+TensorBoard command too.
+
 ## Development
+
+Source lives in the top-level `wavelet_nerf/` package. Run `train.py`, `eval.py`
+and tests from the repository root; no distribution build is needed. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution and results-tagging guidance.
 
 Runtime dependencies cover tensor computation, NumPy/image handling, progress,
 TensorBoard and YAML configuration. Ruff is a development dependency. The former
@@ -630,11 +772,13 @@ deliberately, run `uv lock --upgrade-package <dependency>`, then
   
 ![NeRF pipeline figure from Mildenhall et al.](imgs/pipeline.jpg)
 
-Pipeline figure from Mildenhall et al., *NeRF: Representing Scenes as Neural
+Method diagram from Mildenhall et al., *NeRF: Representing Scenes as Neural
 Radiance Fields for View Synthesis* (ECCV 2020), obtained from the
 [original NeRF repository](https://github.com/bmild/nerf/blob/master/imgs/pipeline.jpg).
-
-> A neural radiance field is a simple fully connected network (weights are ~5MB) trained to reproduce input views of a single scene using a rendering loss. The network directly maps from spatial location and viewing direction (5D input) to color and opacity (4D output), acting as the "volume" so we can use volume rendering to differentiably render new views
+This is an upstream explanatory figure, not a result from a local model,
+configuration or checkpoint. A neural radiance field predicts color and density
+from spatial coordinates and viewing direction; volume rendering combines these
+predictions along camera rays to synthesize an image.
 
 
 ## Citation
@@ -657,7 +801,7 @@ Project-authored code and documentation, and the combined software including
 the MFN adaptation, are licensed under [AGPL-3.0-only](LICENSE). Upstream MIT
 notices for NeRF and SIREN are preserved in the same file.
 
-The MFN base and Gabor-style filter construction in `modules/models.py` are
+The MFN base and Gabor-style filter construction in `wavelet_nerf/models.py` are
 adapted from [Fathony et al.'s implementation](https://github.com/boschresearch/multiplicative-filter-networks).
 Frequency controls, optional LayerNorm, and the NeRF integration are local
 extensions. The SIREN layers draw on

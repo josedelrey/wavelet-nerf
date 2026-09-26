@@ -8,10 +8,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from modules.data import CameraRayGenerator, PixelRaySampler, PixelBatchPlans, RayBatchDataset, camera_rays
-from modules.ndc import ndc_camera_rays
-from modules.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
-from modules.rendering import render_camera, render_nerf
+from wavelet_nerf.data import CameraRayGenerator, PixelRaySampler, PixelBatchPlans, RayBatchDataset, camera_rays
+from wavelet_nerf.ndc import ndc_camera_rays
+from wavelet_nerf.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
+from wavelet_nerf.rendering import render_camera, render_nerf
 
 
 class MemoryPathTests(unittest.TestCase):

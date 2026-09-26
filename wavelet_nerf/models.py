@@ -10,7 +10,7 @@ import torch.nn.functional as F
 import numpy as np
 from typing import Tuple
 
-from modules.encoding import positional_encoding
+from wavelet_nerf.encoding import positional_encoding
 
 
 class NeRFMLP(nn.Module):

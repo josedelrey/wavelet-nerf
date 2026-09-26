@@ -684,7 +684,7 @@ Authors: Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter
 Paper: https://openreview.net/forum?id=OmtmcPkkhT
 Upstream license: GNU Affero General Public License, version 3
 
-The MFNBase implementation in modules/models.py is adapted from the upstream
+The MFNBase implementation in wavelet_nerf/models.py is adapted from the upstream
 MFNBase. WaveletLayer and WaveletNet adapt the upstream GaborLayer and GaborNet
 construction. Adapted for this project in 2025; local changes include the
 omega0 frequency control, optional LayerNorm, and a NeRF density/appearance
@@ -728,9 +728,9 @@ material and the SIREN reference implementation used by the model layers.
 
 NeRF implementation
 Source: https://github.com/bmild/nerf
-Relevant files: modules/models.py, modules/camera.py, modules/encoding.py,
-modules/rendering.py, modules/data.py, modules/ndc.py, modules/nerf_reference.py,
-modules/datasets/llff.py, and download_dataset.sh
+Relevant files: wavelet_nerf/models.py, wavelet_nerf/camera.py, wavelet_nerf/encoding.py,
+wavelet_nerf/rendering.py, wavelet_nerf/data.py, wavelet_nerf/ndc.py, wavelet_nerf/nerf_reference.py,
+wavelet_nerf/datasets/llff.py, and download_dataset.sh
 
 MIT License
 
@@ -757,7 +757,7 @@ SOFTWARE.
 
 SIREN implementation
 Source: https://github.com/vsitzmann/siren
-Relevant code: Sine, SirenLayer, and Siren in modules/models.py
+Relevant code: Sine, SirenLayer, and Siren in wavelet_nerf/models.py
 
 MIT License
 

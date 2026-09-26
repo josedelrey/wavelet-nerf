@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import torch
 
-from modules.models import WaveletLayer, WaveletNeRF
+from wavelet_nerf.models import WaveletLayer, WaveletNeRF
 
 
 class WaveletWidthTests(unittest.TestCase):

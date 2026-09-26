@@ -2,8 +2,8 @@
 from pathlib import Path
 import unittest
 
-from modules.experiment import resolve_experiment_config
-from modules.utils import parse_config
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.utils import parse_config
 
 
 class OutputConfigTests(unittest.TestCase):

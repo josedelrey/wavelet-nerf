@@ -15,4 +15,10 @@ def mse_to_psnr(mse: float) -> float:
     Returns:
         float or np.ndarray: PSNR value(s). Returns +inf if mse = 0.
     """
-    return 20 * np.log10(1 / np.sqrt(mse))
+    values = np.asarray(mse, dtype=np.float64)
+    if not np.isfinite(values).all() or (values < 0).any():
+        raise ValueError('MSE must be finite and nonnegative')
+    result = np.full(values.shape, np.inf)
+    positive = values > 0
+    result[positive] = -10 * np.log10(values[positive])
+    return float(result) if result.ndim == 0 else result

@@ -3,12 +3,12 @@ import unittest
 import numpy as np
 import torch
 
-from modules.data import RayDataset, camera_rays
-from modules.experiment import resolve_experiment_config
-from modules.ndc import ndc_camera_rays, project_rays_ndc
-from modules.nerf_reference import render_reference_nerf
-from modules.rendering import generate_sample_positions, render_nerf
-from modules.scene import resolve_scene_normalization
+from wavelet_nerf.data import RayDataset, camera_rays
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.ndc import ndc_camera_rays, project_rays_ndc
+from wavelet_nerf.nerf_reference import render_reference_nerf
+from wavelet_nerf.rendering import generate_sample_positions, render_nerf
+from wavelet_nerf.scene import resolve_scene_normalization
 
 
 class NDCTests(unittest.TestCase):

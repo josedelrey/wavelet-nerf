@@ -10,11 +10,11 @@ import numpy as np
 import torch
 
 import eval as evaluate
-from modules.experiment import (check_dataset, describe_split, experiment_metadata,
+from wavelet_nerf.experiment import (check_dataset, describe_split, experiment_metadata,
                                 resolve_experiment_config, accelerator_metadata)
-from modules.models import NeRF, Siren, WaveletNeRF
-from modules.scene import SceneNormalization
-from modules.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
+from wavelet_nerf.scene import SceneNormalization
+from wavelet_nerf.utils import load_checkpoint, save_checkpoint
 
 
 class ExperimentMetadataTests(unittest.TestCase):
@@ -80,7 +80,7 @@ class ExperimentMetadataTests(unittest.TestCase):
                      patch('sys.argv', argv), \
                      patch.object(torch.cuda, 'is_available', return_value=False), \
                      patch.object(evaluate, 'load_configured_scene', side_effect=AssertionError('must use saved intrinsics')), \
-                     patch('modules.rendering.render_nerf', render):
+                     patch('wavelet_nerf.rendering.render_nerf', render):
                     evaluate.main()
                 self.assertEqual(len(outputs), 1)
                 expected = original(positions, directions)
@@ -126,7 +126,7 @@ class ExperimentMetadataTests(unittest.TestCase):
         with patch('torch.cuda.is_available', return_value=True), \
              patch('torch.cuda.device_count', return_value=1), \
              patch('torch.cuda.get_device_properties', return_value=properties), \
-             patch('modules.experiment.subprocess.check_output', return_value='580.00\n'):
+             patch('wavelet_nerf.experiment.subprocess.check_output', return_value='580.00\n'):
             metadata = accelerator_metadata(torch.device('cuda:0'))
         self.assertEqual(metadata['device'], 'cuda:0')
         self.assertEqual(metadata['nvidia_driver'], '580.00')
@@ -136,7 +136,7 @@ class ExperimentMetadataTests(unittest.TestCase):
     def test_missing_driver_utility_does_not_prevent_checkpoint_metadata(self):
         with patch('torch.cuda.is_available', return_value=True), \
              patch('torch.cuda.device_count', return_value=0), \
-             patch('modules.experiment.subprocess.check_output', side_effect=FileNotFoundError):
+             patch('wavelet_nerf.experiment.subprocess.check_output', side_effect=FileNotFoundError):
             self.assertIsNone(accelerator_metadata()['nvidia_driver'])
 
     def test_legacy_warning_and_unknown_format(self):

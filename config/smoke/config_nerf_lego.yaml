@@ -1,0 +1,24 @@
+# Two-update CPU execution check; not a quality benchmark.
+experiment_name: nerf_lego_smoke
+model_type: nerf
+baseline_version: reference
+dataset_type: blender
+dataset_path: ./datasets/lego
+dataset_factor: 32
+white_background: true
+device: cpu
+compile_model: false
+num_workers: 0
+hidden_dim: 32
+num_random_rays: 8
+num_samples: 4
+num_samples_eval: 4
+num_importance: 4
+chunk_size: 128
+netchunk: 1024
+num_iters: 2
+save_interval: 1
+log_interval: 1
+val_interval: 1
+testskip: 8
+num_render_poses: 2

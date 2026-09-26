@@ -11,10 +11,10 @@ import yaml
 
 import eval as evaluation
 import train
-from modules.configuration import parse_config
-from modules.experiment import resolve_experiment_config
-from modules.model_factory import create_model
-from modules.models import LegacyNeRF, WaveletNeRF
+from wavelet_nerf.configuration import parse_config
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.model_factory import create_model
+from wavelet_nerf.models import LegacyNeRF, WaveletNeRF
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -27,6 +27,13 @@ class ConfigurationTests(unittest.TestCase):
         path = self.root / 'config.yaml'
         path.write_text(content)
         return parse_config(path)
+
+    def test_all_example_configs_are_valid_training_configs(self):
+        configs = sorted((Path(__file__).resolve().parents[1] / 'config').rglob('*.yaml'))
+        self.assertTrue(configs)
+        for path in configs:
+            with self.subTest(config=path.name):
+                resolve_experiment_config(parse_config(path), training=True)
 
     def test_native_types_scientific_notation_and_literal_strings(self):
         config = self.read('''experiment_name: nerf_test

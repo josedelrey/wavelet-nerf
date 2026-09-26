@@ -11,6 +11,7 @@ jobs:
   check:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +33,7 @@ jobs:
   minimum-torch:
     name: Minimum PyTorch on Python 3.12
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

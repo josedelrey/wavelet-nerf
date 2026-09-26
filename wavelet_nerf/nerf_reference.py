@@ -7,6 +7,7 @@ The upstream MIT notice is preserved in LICENSE.
 import math
 
 import torch
+from wavelet_nerf.render_validation import validate_bounds, validate_count, validate_rays, validate_sampling_options
 
 
 def sample_pdf(bins, weights, num_samples, deterministic=False):
@@ -31,6 +32,8 @@ def sample_pdf(bins, weights, num_samples, deterministic=False):
 
 def sample_depths(rays, near, far, num_samples, perturb=True, lindisp=False):
     """Endpoint-inclusive depths with independent midpoint-bin jitter per ray."""
+    validate_bounds(near, far, lindisp=lindisp)
+    validate_count(num_samples, 'num_samples', minimum=2)
     t = torch.linspace(0, 1, num_samples, device=rays.device, dtype=rays.dtype)
     depths = (1 / ((1 - t) / near + t / far) if lindisp
               else near * (1 - t) + far * t)
@@ -45,6 +48,10 @@ def sample_depths(rays, near, far, num_samples, perturb=True, lindisp=False):
 
 def raw_to_outputs(raw, depths, rays_d, white_background=False, raw_noise_std=0.0):
     """Sigmoid RGB, noisy ReLU density, ray-length-corrected alpha compositing."""
+    # Promote autocast network outputs before the large terminal interval and exp/cumprod.
+    dtype = torch.promote_types(torch.promote_types(raw.dtype, depths.dtype),
+                               torch.promote_types(rays_d.dtype, torch.float32))
+    raw, depths, rays_d = (value.to(dtype) for value in (raw, depths, rays_d))
     distances = torch.cat([
         depths[..., 1:] - depths[..., :-1], torch.full_like(depths[..., :1], 1e10)
     ], dim=-1) * torch.linalg.vector_norm(rays_d, dim=-1, keepdim=True)
@@ -82,20 +89,15 @@ def render_reference_nerf(model, rays_o, rays_d, near, far, num_samples=64,
                           white_background=True, raw_noise_std=0.0,
                           view_directions=None, device=None, output_device=None):
     """Coarse/fine rendering with separate geometry and world viewing directions."""
-    if num_samples < 2 or (num_importance > 0 and num_samples < 3):
+    validate_count(num_samples, 'num_samples', minimum=2)
+    validate_count(num_importance, 'num_importance', minimum=0)
+    validate_count(chunk_size, 'chunk_size')
+    validate_count(netchunk, 'netchunk')
+    validate_bounds(near, far, lindisp=lindisp)
+    validate_rays(rays_o, rays_d, view_directions)
+    validate_sampling_options(perturb, raw_noise_std)
+    if num_importance > 0 and num_samples < 3:
         raise ValueError('Reference rendering needs >=2 coarse samples (>=3 with importance sampling)')
-    if num_importance < 0 or chunk_size <= 0 or netchunk <= 0:
-        raise ValueError('Invalid importance sample count or chunk size')
-    if not math.isfinite(near) or not math.isfinite(far) or far <= near:
-        raise ValueError('Reference rendering requires finite near < far')
-    if lindisp and near <= 0:
-        raise ValueError('Inverse-depth sampling requires near > 0')
-    if len(rays_o) == 0 or rays_o.shape != rays_d.shape or rays_d.shape[-1] != 3:
-        raise ValueError('Expected nonempty matching ray tensors of shape N x 3')
-    if torch.any(torch.linalg.vector_norm(rays_d, dim=-1) == 0):
-        raise ValueError('Ray directions must be nonzero')
-    if view_directions is not None and view_directions.shape != rays_d.shape:
-        raise ValueError('Viewing directions must match geometry ray directions')
     if output_device is not None and torch.is_grad_enabled():
         raise ValueError('output_device is for inference; use torch.no_grad()')
     device = rays_o.device if device is None else device

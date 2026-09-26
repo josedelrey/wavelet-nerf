@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from modules.camera import average_pose, render_camera_path
+from wavelet_nerf.camera import average_pose, render_camera_path
 from .images import read_image, stack_images
 from .types import SceneData
 

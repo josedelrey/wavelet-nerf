@@ -10,20 +10,20 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from modules.data import (load_configured_scene, resolve_sampling_bounds, PixelRaySampler,
+from wavelet_nerf.data import (load_configured_scene, resolve_sampling_bounds, PixelRaySampler,
                           RayBatchDataset, PixelBatchPlans)
-from modules.model_factory import create_model, model_hyperparameters
-from modules.rendering import render_nerf, render_camera
-from modules.runtime import add_runtime_arguments, runtime_overrides, resolve_device, prepare_model
-from modules.scene import SceneNormalization, resolve_scene_normalization
-from modules.nerf_reference import KerasAdam
-from modules.experiment import (resolve_experiment_config,
+from wavelet_nerf.model_factory import create_model, model_hyperparameters
+from wavelet_nerf.rendering import render_nerf, render_camera
+from wavelet_nerf.runtime import add_runtime_arguments, runtime_overrides, resolve_device, prepare_model
+from wavelet_nerf.scene import SceneNormalization, resolve_scene_normalization
+from wavelet_nerf.nerf_reference import KerasAdam
+from wavelet_nerf.experiment import (resolve_experiment_config,
                                 check_dataset, experiment_metadata)
-from modules.run_state import (capture_rng, restore_rng,
+from wavelet_nerf.run_state import (capture_rng, restore_rng,
                                configure_reproducibility, prepare_output, write_run_artifacts)
-from modules.loss import mse_to_psnr
-from modules.utils import parse_config, format_elapsed_time
-from modules.utils import load_checkpoint, save_checkpoint, log_training_metrics, get_checkpoint_step
+from wavelet_nerf.loss import mse_to_psnr
+from wavelet_nerf.utils import parse_config, format_elapsed_time
+from wavelet_nerf.utils import load_checkpoint, save_checkpoint, log_training_metrics, get_checkpoint_step
 
 
 def main():

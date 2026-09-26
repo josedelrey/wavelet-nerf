@@ -7,15 +7,15 @@ import math
 import imageio
 from tqdm import tqdm
 
-from modules.data import load_configured_scene
-from modules.model_factory import create_model
-from modules.rendering import render_camera
-from modules.runtime import add_runtime_arguments, runtime_overrides, resolve_device, prepare_model
-from modules.scene import SceneNormalization, resolve_scene_normalization
-from modules.utils import load_checkpoint, parse_config
-from modules.camera import configured_render_path, render_camera_path
-from modules.experiment import resolve_experiment_config
-from modules.run_state import configure_reproducibility, prepare_output
+from wavelet_nerf.data import load_configured_scene
+from wavelet_nerf.model_factory import create_model
+from wavelet_nerf.rendering import render_camera
+from wavelet_nerf.runtime import add_runtime_arguments, runtime_overrides, resolve_device, prepare_model
+from wavelet_nerf.scene import SceneNormalization, resolve_scene_normalization
+from wavelet_nerf.utils import load_checkpoint, parse_config
+from wavelet_nerf.camera import configured_render_path, render_camera_path
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.run_state import configure_reproducibility, prepare_output
 
 
 def image_metrics(prediction, target):

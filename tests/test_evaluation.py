@@ -13,9 +13,9 @@ import numpy as np
 import torch
 
 import eval as evaluation
-from modules.experiment import resolve_experiment_config
-from modules.models import NeRF
-from modules.scene import SceneNormalization
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.models import NeRF
+from wavelet_nerf.scene import SceneNormalization
 
 
 class EvaluationTests(unittest.TestCase):
@@ -100,7 +100,7 @@ class EvaluationTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
              patch('sys.argv', argv), patch.object(torch.cuda, 'is_available', return_value=False), \
              patch.object(evaluation, 'render_camera_path', side_effect=AssertionError('must use test poses')), \
-             patch('modules.rendering.render_nerf', render):
+             patch('wavelet_nerf.rendering.render_nerf', render):
             evaluation.main()
         self.assertEqual(len(seen), 6)
         seen = [(torch.cat([item[0] for item in seen[start:start + 3]]),

@@ -4,7 +4,7 @@ import unittest
 
 import torch
 
-from modules.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.utils import load_checkpoint, save_checkpoint
 
 
 class CheckpointPortabilityTests(unittest.TestCase):

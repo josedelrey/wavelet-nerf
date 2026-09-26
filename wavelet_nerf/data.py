@@ -8,10 +8,10 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, Sampler
 
-from modules.datasets import load_scene
-from modules.datasets.images import validate_rgb_images
-from modules.datasets.types import validate_cameras
-from modules.camera import configured_render_path, render_camera_path
+from wavelet_nerf.datasets import load_scene
+from wavelet_nerf.datasets.images import validate_rgb_images
+from wavelet_nerf.datasets.types import validate_cameras
+from wavelet_nerf.camera import configured_render_path, render_camera_path
 
 
 def load_configured_scene(config, *, splits=('train', 'val', 'test')):
@@ -134,7 +134,7 @@ class CameraRayGenerator:
         origins = self.poses[camera_indices, :3, 3].copy()
         if self.dataset_type == 'llff':
             # Local import avoids the existing ndc -> data camera-helper dependency.
-            from modules.ndc import project_rays_ndc
+            from wavelet_nerf.ndc import project_rays_ndc
             matrices = self.intrinsics[camera_indices]
             ndc_origins, ndc_directions = project_rays_ndc(
                 origins, directions, self.height, self.width, matrices[:, 0, 0],

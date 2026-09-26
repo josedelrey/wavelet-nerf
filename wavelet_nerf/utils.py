@@ -4,9 +4,9 @@ import torch
 from tqdm import tqdm
 from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
 
-from modules.run_state import atomic_write
-from modules.loss import mse_to_psnr
-from modules.configuration import parse_config  # noqa: F401 - retained public import
+from wavelet_nerf.run_state import atomic_write
+from wavelet_nerf.loss import mse_to_psnr
+from wavelet_nerf.configuration import parse_config  # noqa: F401 - retained public import
 
 
 def format_elapsed_time(start_time: datetime.datetime) -> str:

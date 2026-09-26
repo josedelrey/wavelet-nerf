@@ -14,7 +14,7 @@ import yaml
 
 import train
 import eval as evaluate
-from modules.utils import load_checkpoint
+from wavelet_nerf.utils import load_checkpoint
 
 
 class ResumeTrajectoryTests(unittest.TestCase):
@@ -114,6 +114,29 @@ class ResumeTrajectoryTests(unittest.TestCase):
         resumed = load_checkpoint(self.run_training('interrupted', 7, settings, resume=interrupted))
         for key in ('model_state_dict', 'optimizer_state_dict', 'training_state'):
             self.assert_nested_equal(whole[key], resumed[key])
+
+    def test_validation_uses_its_own_split_size(self):
+        scene = self.root / 'scene'
+        metadata = json.loads((scene / 'transforms_train.json').read_text())
+        third = {**metadata['frames'][0], 'file_path': './2'}
+        pose = np.array(third['transform_matrix'])
+        pose[0, 3] = .2
+        third['transform_matrix'] = pose.tolist()
+        imageio.imwrite(scene / '2.png', np.full((3, 4, 3), 100, dtype=np.uint8))
+        for count in (1, 3):
+            with self.subTest(validation_views=count):
+                frames = metadata['frames'][:1] if count == 1 else [*metadata['frames'], third]
+                (scene / 'transforms_val.json').write_text(json.dumps({**metadata, 'frames': frames}))
+                settings = {'model_type': 'siren', 'siren_hidden_dim': 8, 'num_layers': 2,
+                            'first_step_render': True, 'seed': 3}
+                # This seed selects the final validation view in both splits.
+                # Using the two-view training bound would fail or omit that view.
+                with patch.object(train, 'render_camera', wraps=train.render_camera) as render:
+                    path = self.run_training(f'validation{count}', 1, settings)
+                render.assert_called_once()
+                np.testing.assert_allclose(render.call_args.args[3],
+                                           np.array(frames[-1]['transform_matrix']))
+                self.assertEqual(load_checkpoint(path)['step'], 1)
 
     def test_writer_is_closed_when_initial_logging_fails(self):
         settings = {'model_type': 'siren', 'siren_hidden_dim': 8, 'num_layers': 2}

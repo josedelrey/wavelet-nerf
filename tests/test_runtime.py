@@ -3,11 +3,11 @@ from unittest.mock import patch
 
 import torch
 
-from modules.configuration import normalize_config
-from modules.experiment import resolve_experiment_config
-from modules.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
-from modules.rendering import render_nerf
-from modules.runtime import prepare_model, resolve_device
+from wavelet_nerf.configuration import normalize_config
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
+from wavelet_nerf.rendering import render_nerf
+from wavelet_nerf.runtime import prepare_model, resolve_device
 
 
 class RuntimeTests(unittest.TestCase):

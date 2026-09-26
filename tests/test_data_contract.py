@@ -10,9 +10,9 @@ import zlib
 import numpy as np
 from PIL import Image
 
-from modules.data import CameraRayGenerator, PixelRaySampler, camera_rays, compute_rays
-from modules.datasets import load_scene
-from modules.datasets.images import read_image
+from wavelet_nerf.data import CameraRayGenerator, PixelRaySampler, camera_rays, compute_rays
+from wavelet_nerf.datasets import load_scene
+from wavelet_nerf.datasets.images import read_image
 
 
 class DataContractTests(unittest.TestCase):

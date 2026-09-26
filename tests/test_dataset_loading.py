@@ -13,11 +13,11 @@ import yaml
 
 import eval as evaluation
 import train
-from modules.camera import render_camera_path
-from modules.data import camera_rays
-from modules.datasets import load_scene
-from modules.experiment import resolve_experiment_config
-from modules.utils import load_checkpoint, parse_config
+from wavelet_nerf.camera import render_camera_path
+from wavelet_nerf.data import camera_rays
+from wavelet_nerf.datasets import load_scene
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.utils import load_checkpoint, parse_config
 
 
 def llff_fixture(root, count=4, height=6, width=10):

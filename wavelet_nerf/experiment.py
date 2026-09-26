@@ -9,9 +9,9 @@ import warnings
 
 import torch
 
-from modules.run_state import determinism_settings
+from wavelet_nerf.run_state import determinism_settings
 
-from modules.configuration import (_COMMON, _MODEL, normalize_config, validate_resolved_config)
+from wavelet_nerf.configuration import (_COMMON, _MODEL, normalize_config, validate_resolved_config)
 
 
 _TRAINING = {'seed', 'deterministic', 'num_random_rays', 'num_samples', 'learning_rate',

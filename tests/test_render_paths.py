@@ -2,7 +2,7 @@ import unittest
 
 import numpy as np
 
-from modules.camera import configured_render_path, render_camera_path
+from wavelet_nerf.camera import configured_render_path, render_camera_path
 
 
 class RenderPathTests(unittest.TestCase):

@@ -8,14 +8,14 @@ import numpy as np
 import torch
 from PIL import Image
 
-from modules.data import camera_rays
-from modules.models import LegacyNeRF, NeRF, NeRFMLP
-from modules.nerf_reference import (KerasAdam, raw_to_outputs, render_reference_nerf,
+from wavelet_nerf.data import camera_rays
+from wavelet_nerf.models import LegacyNeRF, NeRF, NeRFMLP
+from wavelet_nerf.nerf_reference import (KerasAdam, raw_to_outputs, render_reference_nerf,
                                     sample_depths, sample_pdf)
-from modules.experiment import resolve_experiment_config
-from modules.datasets.images import read_image
-from modules.utils import load_checkpoint, save_checkpoint
-from modules.rendering import render_nerf
+from wavelet_nerf.experiment import resolve_experiment_config
+from wavelet_nerf.datasets.images import read_image
+from wavelet_nerf.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.rendering import render_nerf
 
 
 class ReferenceNeRFTests(unittest.TestCase):

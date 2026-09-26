@@ -11,10 +11,10 @@ import numpy as np
 import torch
 
 import eval as evaluation
-from modules.models import NeRF, Siren, WaveletNeRF
-from modules.rendering import normalize_positions, query_model, render_nerf
-from modules.scene import SceneNormalization, resolve_scene_normalization
-from modules.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
+from wavelet_nerf.rendering import normalize_positions, query_model, render_nerf
+from wavelet_nerf.scene import SceneNormalization, resolve_scene_normalization
+from wavelet_nerf.utils import load_checkpoint, save_checkpoint
 
 
 class SceneNormalizationTests(unittest.TestCase):
@@ -142,7 +142,7 @@ class SceneNormalizationTests(unittest.TestCase):
                 render_path={'type': 'orbit', 'elevation': -30., 'radius': 4.},
             )
             stack.enter_context(patch.object(evaluation, 'load_configured_scene', return_value=scene))
-            render = stack.enter_context(patch('modules.rendering.render_nerf',
+            render = stack.enter_context(patch('wavelet_nerf.rendering.render_nerf',
                                                      return_value=torch.zeros(1, 3)))
             evaluation.main()
             self.assertEqual(render.call_args.kwargs['scene_normalization'], transform)
