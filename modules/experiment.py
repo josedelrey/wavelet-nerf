@@ -41,9 +41,33 @@ _TRAINING = {'seed', 'num_random_rays', 'num_samples', 'learning_rate',
              'lr_decay', 'lr_decay_factor', 'lr_min'}
 
 
+def _canonicalize_save_path(config):
+    """Accept the former config name while storing only canonical save_path."""
+    config = dict(config)
+    if 'save_root' in config:
+        root = config.pop('save_root')
+        if 'save_path' in config and Path(config['save_path']).resolve() != Path(root).resolve():
+            raise ValueError('save_root and save_path specify different checkpoint directories; '
+                             'use save_path only')
+        config.setdefault('save_path', root)
+    if 'save_path' in config:
+        if not str(config['save_path']).strip():
+            raise ValueError('save_path must specify a nonempty checkpoint directory')
+        config['save_path'] = str(config['save_path'])
+    return config
+
+
 def resolve_experiment_config(config, checkpoint=None, *, training=False):
     """Fill defaults, inherit saved settings, and reject explicit incompatible overrides."""
+    config = _canonicalize_save_path(config)
     saved = checkpoint.get('experiment', {}).get('config') if checkpoint else None
+    if saved is not None:
+        saved = dict(saved)
+        # Old checkpoints can contain both an ignored save_root and the actual
+        # resolved save_path. Preserve their recorded destination on restoration.
+        if 'save_path' in saved:
+            saved.pop('save_root', None)
+        saved = _canonicalize_save_path(saved)
     if checkpoint is not None and saved is None:
         warnings.warn('Legacy checkpoint has no experiment metadata; compatibility '
                       'cannot be verified. Supply the original config.', stacklevel=2)

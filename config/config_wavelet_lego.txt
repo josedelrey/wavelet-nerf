@@ -6,7 +6,7 @@
 # Log Parameters
 # --------------------
 log_root = ./logs                  # Name of the root logs folder
-experiment_name = wavelet          # Name of this experiment's log subfolder
+experiment_name = wavelet_lego     # Scene-specific log and checkpoint subfolder
 
 # --------------------
 # Dataset Parameters

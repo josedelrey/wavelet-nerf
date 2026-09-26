@@ -116,8 +116,8 @@ OpenGL camera-to-world poses, per-view 3×3 intrinsics, camera-depth bounds,
 source indices and paths, explicit splits, the source-world-to-scene transform,
 sampling bounds, and render poses/path settings. `.split(name)` selects a
 `SceneSplit`; `.describe()` produces serializable camera and preprocessing
-metadata. Novel rendering uses a Lego orbit or an LLFF spiral with mean camera
-intrinsics, saved in the checkpoint so dataset images are unnecessary.
+metadata. Novel rendering uses a Lego orbit or an LLFF spiral with saved render
+intrinsics, so dataset images are unnecessary.
 
 Logs are saved in:
 
@@ -131,21 +131,30 @@ Model checkpoints are saved in:
 ./models/<experiment_name>/<experiment_name>_<step>.pth
 ```
 
+`save_path` sets the checkpoint root directory; logs use `log_root`. For example,
+`save_path = ./checkpoints` and `experiment_name = nerf_lego` save weights under
+`./checkpoints/nerf_lego/`. All example configs use scene-specific experiment
+names. Choose a distinct name for each new experiment to keep its outputs separate.
+Older configs using `save_root` remain supported as an alias for `save_path`.
+If both keys specify different directories, configuration loading fails with an
+error. Resumed runs can override the output directory using either key; saved
+checkpoint configs record only `save_path`.
+
 Resume training from a checkpoint, using the config for that experiment:
 
 ```bash
 # Lego
 uv run --locked python train.py --config config/config_nerf_lego.txt \
-  --resume ./models/nerf/nerf_050000.pth
+  --resume ./models/nerf_lego/nerf_lego_050000.pth
 
 # Fern
 uv run --locked python train.py --config config/config_nerf_fern.txt \
-  --resume ./models/nerf_fern/nerf_fern_050000.pth
+  --resume ./models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth
 ```
 
 Use a checkpoint that exists and set `num_iters` above its completed-update
 count to continue training. For SIREN or wavelet, substitute the corresponding
-config and experiment name: Lego uses `siren` or `wavelet`; Fern uses
+config and experiment name: Lego uses `siren_lego` or `wavelet_lego`; Fern uses
 `siren_fern` or `wavelet_fern`.
 
 New checkpoints include the resolved config (including defaults and seed),
@@ -167,9 +176,9 @@ For the baseline examples, render a Lego orbit or a Fern spiral:
 
 ```bash
 uv run --locked python eval.py --mode render \
-  --checkpoint ./models/nerf/nerf_050000.pth --output ./renders/nerf_lego_orbit
+  --checkpoint ./models/nerf_lego/nerf_lego_050000.pth --output ./renders/nerf_lego_orbit
 uv run --locked python eval.py --mode render \
-  --checkpoint ./models/nerf_fern/nerf_fern_050000.pth --output ./renders/nerf_fern_spiral
+  --checkpoint ./models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth --output ./renders/nerf_fern_spiral
 ```
 
 `num_render_poses` controls frame count. Lego's `render_orbit_elevation` (degrees)
@@ -318,12 +327,12 @@ against its image:
 
 ```bash
 uv run --locked python eval.py --mode test \
-  --checkpoint ./models/nerf/nerf_250000.pth \
+  --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
   --dataset-path ./datasets/lego \
   --output ./renders/nerf_lego_test
 
 uv run --locked python eval.py --mode test \
-  --checkpoint ./models/nerf_fern/nerf_fern_050000.pth \
+  --checkpoint ./models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth \
   --dataset-path ./datasets/fern \
   --output ./renders/nerf_fern_test
 ```
@@ -386,7 +395,7 @@ Once you have trained a model, render frames with:
 uv run --locked python eval.py \
   --mode render \
   --config config/config_nerf_lego.txt \
-  --checkpoint ./models/nerf/nerf_250000.pth \
+  --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
   --output ./renders/nerf_lego_eval
 ```
 

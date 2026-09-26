@@ -75,8 +75,8 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
 
     # Model saving parameters
-    save_root = config['save_path']
-    save_path = os.path.join(save_root, experiment_name)
+    checkpoint_root = config['save_path']
+    save_path = os.path.join(checkpoint_root, experiment_name)
     save_interval = int(config['save_interval'])
     os.makedirs(save_path, exist_ok=True)
 

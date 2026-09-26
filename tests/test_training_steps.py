@@ -26,11 +26,13 @@ class TrainingStepTests(unittest.TestCase):
         self.root = Path(self.directory.name)
 
     def run_training(self, name, total, resume=None, interrupt_after=None,
-                     first_step_render=False, scene_settings=None):
+                     first_step_render=False, scene_settings=None,
+                     save_key='save_path', save_directory=None):
+        checkpoint_root = self.root / 'models' if save_directory is None else Path(save_directory)
         config = {
             'experiment_name': name,
             'log_root': str(self.root / 'logs'),
-            'save_path': str(self.root / 'models'),
+            save_key: str(checkpoint_root),
             'num_iters': str(total),
             'save_interval': '1',
             'log_interval': '1',
@@ -83,7 +85,7 @@ class TrainingStepTests(unittest.TestCase):
             progress = stack.enter_context(patch.object(train, 'tqdm'))
             train.main()
         return SimpleNamespace(
-            folder=self.root / 'models' / name,
+            folder=checkpoint_root / name,
             training_calls=training_calls,
             writer=writer_factory.return_value,
             writer_kwargs=writer_factory.call_args.kwargs,
@@ -119,6 +121,22 @@ class TrainingStepTests(unittest.TestCase):
         self.assertEqual(validation_steps, [1, 2])
         self.assertEqual(result.progress.update.call_args_list, [call(1)] * 3)
         result.writer.close.assert_called_once()
+
+    def test_custom_checkpoint_root_and_legacy_alias_save_and_resume(self):
+        for key in ('save_path', 'save_root'):
+            with self.subTest(key=key):
+                destination = self.root / f'custom_{key}'
+                self.run_training(key, 1, save_key=key, save_directory=destination)
+                path = destination / key / f'{key}_000001.pth'
+                checkpoint = self.checkpoint(path, 1)
+                settings = checkpoint['experiment']['config']
+                self.assertEqual(settings['save_path'], str(destination))
+                self.assertNotIn('save_root', settings)
+                self.assertFalse((self.root / 'models' / key).exists())
+                resumed_root = self.root / f'relocated_{key}'
+                resumed = self.run_training(f'{key}_resumed', 2, resume=path,
+                                            save_key=key, save_directory=resumed_root)
+                self.checkpoint(resumed.folder / f'{key}_resumed_000002.pth', 2)
 
     def test_resume_performs_only_remaining_updates(self):
         original = self.run_training('original', 2)
