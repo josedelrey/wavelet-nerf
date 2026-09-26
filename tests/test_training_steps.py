@@ -27,7 +27,7 @@ class TrainingStepTests(unittest.TestCase):
 
     def run_training(self, name, total, resume=None, interrupt_after=None,
                      first_step_render=False, scene_settings=None,
-                     save_key='save_path', save_directory=None):
+                     save_key='save_path', save_directory=None, cli_args=()):
         checkpoint_root = self.root / 'models' if save_directory is None else Path(save_directory)
         config = {
             'experiment_name': name,
@@ -48,13 +48,18 @@ class TrainingStepTests(unittest.TestCase):
                            np.array([[2., 6.]], dtype=np.float32), np.array([0]), ('./0',))
         scene = SimpleNamespace(dataset_type='blender', white_background=True,
                                 sampling_bounds=(2., 6.), split=lambda name: split,
+                                images=images, poses=poses, intrinsics=split.intrinsics,
+                                splits={'train': np.array([0]), 'val': np.array([0])},
+                                describe_split=lambda name: split.describe(),
                                 describe=lambda: {})
         training_calls = 0
         scene_transforms = []
+        loader_options, query_chunks = [], []
 
         def render(model, rays_o, rays_d, *args, **kwargs):
             nonlocal training_calls
             scene_transforms.append(kwargs['scene_normalization'].to_dict())
+            query_chunks.append(kwargs['netchunk'])
             if kwargs.get('stratified', True):
                 if training_calls == interrupt_after:
                     raise KeyboardInterrupt
@@ -66,9 +71,11 @@ class TrainingStepTests(unittest.TestCase):
         loader = train.DataLoader
 
         def cpu_loader(*args, **kwargs):
+            loader_options.append(kwargs)
             return loader(*args, **{**kwargs, 'num_workers': 0})
 
         argv = ['train.py', '--config', 'unused.yaml']
+        argv += list(cli_args)
         if resume is not None:
             argv += ['--resume', str(resume)]
         with contextlib.ExitStack() as stack:
@@ -80,6 +87,7 @@ class TrainingStepTests(unittest.TestCase):
             stack.enter_context(patch.object(train, 'create_model', side_effect=lambda config: TinyModel()))
             stack.enter_context(patch.object(train, 'DataLoader', cpu_loader))
             stack.enter_context(patch.object(train, 'render_nerf', render))
+            stack.enter_context(patch('modules.rendering.render_nerf', render))
             writer_factory = stack.enter_context(patch.object(train, 'SummaryWriter'))
             progress = stack.enter_context(patch.object(train, 'tqdm'))
             train.main()
@@ -90,7 +98,23 @@ class TrainingStepTests(unittest.TestCase):
             writer_kwargs=writer_factory.call_args.kwargs,
             progress=progress.return_value.__enter__.return_value,
             scene_transforms=scene_transforms,
+            loader_options=loader_options,
+            query_chunks=query_chunks,
         )
+
+    def test_cli_overrides_runtime_settings_before_training(self):
+        with patch('torch.compile', side_effect=AssertionError('compilation must be disabled')):
+            result = self.run_training(
+                'runtime', 1, scene_settings={'model_type': 'siren', 'device': 'cuda',
+                                               'compile_model': True, 'num_workers': 4},
+                cli_args=('--device', 'cpu', '--no-compile', '--num-workers', '0', '--netchunk', '3'),
+            )
+        saved = self.checkpoint(result.folder / 'runtime_000001.pth', 1)
+        self.assertEqual(saved['experiment']['environment']['device'], 'cpu')
+        self.assertFalse(saved['experiment']['config']['compile_model'])
+        self.assertEqual(result.loader_options[0]['num_workers'], 0)
+        self.assertFalse(result.loader_options[0]['pin_memory'])
+        self.assertTrue(all(chunk == 3 for chunk in result.query_chunks))
 
     def checkpoint(self, path, expected):
         checkpoint = torch.load(path, map_location='cpu', weights_only=True)

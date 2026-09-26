@@ -8,7 +8,7 @@ import yaml
 
 
 _COMMON = {
-    'dataset_path': './datasets/lego', 'seed': 42,
+    'dataset_path': './datasets/lego', 'seed': 42, 'deterministic': False,
     'dataset_type': 'blender', 'dataset_factor': 1, 'llff_holdout': 8,
     'llff_bounds_scale': 0.75, 'llff_recenter': True, 'white_background': True,
     'near': 2.0, 'far': 6.0, 'num_random_rays': 1024,
@@ -17,11 +17,12 @@ _COMMON = {
     'lr_min': 1e-5, 'num_iters': 150000, 'save_interval': 5000,
     'log_interval': 10, 'val_interval': 1000, 'first_step_render': False,
     'log_root': './logs', 'save_path': './models', 'num_render_poses': 40,
+    'device': 'auto', 'compile_model': False, 'num_workers': 0, 'netchunk': 65536,
 }
 _MODEL = {
     'nerf': {
         'pos_encoding_dim': 10, 'dir_encoding_dim': 4, 'hidden_dim': 256,
-        'baseline_version': 'reference', 'num_importance': 128, 'netchunk': 65536,
+        'baseline_version': 'reference', 'num_importance': 128,
         'perturb': 1.0, 'lindisp': False, 'raw_noise_std': 0.0,
         'white_background': True, 'no_batching': True, 'precrop_iters': 0,
         'precrop_frac': 0.5, 'half_res': False, 'testskip': 8,
@@ -46,13 +47,14 @@ _TYPES = {key: type(value) for group in (_COMMON, *_MODEL.values(), _EXTRA)
           for key, value in group.items()}
 # These loader options apply to every model.
 _COMMON.update(half_res=False, testskip=1)
+_COMMON.update({key: value for key, value in _EXTRA.items() if key.startswith('render_')})
 _POSITIVE_INTS = {'dataset_factor', 'llff_holdout', 'num_random_rays', 'num_samples',
                   'num_samples_eval', 'chunk_size', 'num_iters', 'save_interval',
                   'log_interval', 'val_interval', 'num_render_poses', 'netchunk',
                   'testskip', 'hidden_dim', 'siren_hidden_dim', 'wave_hidden_dim',
                   'num_layers', 'wave_num_layers', 'wave_in_features'}
 _NONNEGATIVE_INTS = {'seed', 'num_importance', 'precrop_iters', 'pos_encoding_dim',
-                     'dir_encoding_dim', 'siren_dir_encoding_dim', 'wave_dir_encoding_dim'}
+                     'dir_encoding_dim', 'siren_dir_encoding_dim', 'wave_dir_encoding_dim', 'num_workers'}
 _POSITIVE_FLOATS = {'learning_rate', 'llff_bounds_scale', 'scene_scale', 'sigma_mul',
                     'rgb_mul', 'w0', 'hidden_w0', 'input_scale', 'weight_scale',
                     'alpha', 'beta', 'omega0', 'render_orbit_radius',
@@ -159,6 +161,8 @@ def normalize_config(config, *, legacy=False):
             raise ValueError('dataset_type must be blender or llff')
         if key == 'baseline_version' and value not in ('reference', 'legacy'):
             raise ValueError('baseline_version must be reference or legacy')
+        if key == 'device' and not re.fullmatch(r'auto|cpu|cuda(?::[0-9]+)?', value):
+            raise ValueError('device must be auto, cpu, cuda or cuda:<index>; MPS is not supported')
         result[key] = value
     return result
 

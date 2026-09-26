@@ -55,8 +55,9 @@ available. An unavailable driver version is stored as `null`.
 
 The locked CPU install and test suite were verified on 2026-09-27 with
 PyTorch `2.14.0+cpu`, Python 3.12.3 and Linux x86-64 on an Intel i7-13700HX.
-The CUDA install selection resolves to `2.14.0+cu130`; GPU execution remains
-unverified because the verification environment cannot access the NVIDIA driver.
+The CUDA install selection resolves to `2.14.0+cu130`. CUDA rendering was checked
+on an RTX 4070 Laptop GPU (8 GB, compute capability 8.9) with driver 595.91.07;
+GPU access required running outside the verification sandbox.
 
 ## How To Run?
 
@@ -106,6 +107,49 @@ Old `key = value` text config files are no longer accepted. Migrate their entrie
 to `key: value` in a `.yaml` or `.yml` file, keeping existing experiment settings
 when resuming. Old checkpoint configs stored as strings are converted to native
 types automatically. New checkpoints store the resolved typed configuration.
+
+Device and performance settings can be set in YAML:
+
+```yaml
+device: auto         # CUDA when available, otherwise CPU; also cpu, cuda, cuda:1
+compile_model: false # Opt into torch.compile with true
+num_workers: 0       # Training DataLoader workers
+chunk_size: 8192     # Rays rendered per chunk
+netchunk: 65536      # Points queried per network call, for every model
+```
+
+Both commands accept `--device`, `--compile` / `--no-compile` and `--netchunk`;
+training also accepts `--num-workers`. CLI values override YAML. For example:
+
+```bash
+uv run --locked python train.py --config config/config_siren_lego.yaml --device cpu --no-compile --num-workers 0
+uv run --locked --no-group cpu --group cu130 python eval.py --checkpoint models/nerf/nerf_050000.pth --device cuda:0 --compile
+```
+
+Runtime choices can change on resume and evaluation; a checkpoint's device and
+compilation settings are not inherited. Explicit unavailable CUDA devices fail
+with an error. Compilation is off by default and uses Inductor when enabled;
+compiler errors propagate, so use `--no-compile` in unsupported environments.
+Pinned DataLoader memory is enabled only for CUDA. Point-query chunking bounds
+each network call, but training still retains activations needed for gradients.
+The render loops do not clear the CUDA allocator cache each frame. A small
+float32 CUDA benchmark on the GPU above compared 20 frames per setting after
+warmup, alternating the order and synchronizing for timing. It rendered 32×32
+images with ray chunks of 512, point chunks of 8,192 and 64 samples per ray
+(plus 32 fine samples for NeRF). Networks used width 64, eight spatial layers
+for NeRF and four layers for SIREN/Wavelet. Median times were:
+
+| Model | Keep cache | Clear cache before each frame |
+| --- | ---: | ---: |
+| NeRF | 14.17 ms | 15.12 ms |
+| SIREN | 5.02 ms | 5.69 ms |
+| Wavelet | 12.34 ms | 13.39 ms |
+
+Rendered values matched between settings. These timings describe this small
+case, rather than full training throughput. MPS and mixed precision are not supported;
+the models and volume integration retain float32 arithmetic.
+Inductor rendering and backward passes have been checked for NeRF, SIREN and
+Wavelet on both PyTorch `2.14.0+cpu` and `2.14.0+cu130` on the hardware above.
 
 Train the **baseline NeRF** on `lego`:
 
@@ -172,6 +216,20 @@ sampling bounds, and render poses/path settings. `.split(name)` selects a
 metadata. Novel rendering uses a Lego orbit or an LLFF spiral with saved render
 intrinsics, so dataset images are unnecessary.
 
+Images must be 8-bit RGB or RGBA PNG, or RGB JPEG. Grayscale, palette images,
+16-bit PNG, and other encodings must be converted explicitly before loading.
+Decoded pixels are float32 RGB in `[0, 1]` (channel values divided by 255),
+without gamma linearization or color-profile conversion. Blender resizes floating
+channels with area averaging before optional white alpha compositing; without a
+white background it retains the stored RGB, following the reference loader.
+LLFF uses Lanczos resizing and composites any alpha over the configured background.
+All loaded views must share their final image dimensions. Intrinsics are stored
+per view and scaled separately in X and Y to match the actual resized dimensions.
+Blender frame paths may begin with `./` and may include their extension; omitted
+extensions default to `.png`. Paths must remain inside the dataset directory.
+Ray geometry can be generated without target images using `camera_rays` or
+`CameraRayGenerator`; `compute_rays` additionally validates and pairs RGB targets.
+
 Logs are saved in:
 
 ```
@@ -210,6 +268,18 @@ count to continue training. For SIREN or wavelet, substitute the corresponding
 config and experiment name: Lego uses `siren_lego` or `wavelet_lego`; Fern uses
 `siren_fern` or `wavelet_fern`.
 
+New training runs refuse nonempty experiment directories. Use `--resume` to
+continue an existing run, choose a new `experiment_name`, or use `--overwrite`
+to replace existing checkpoints, TensorBoard events and run metadata.
+`--resume` and `--overwrite` are mutually exclusive. Overwrite preserves files
+that are not recognized run artifacts.
+
+The log directory contains a readable `config.yaml` with resolved defaults and
+an `experiment.json` with dataset, code and environment metadata. Resume writes
+`config.resume-<step>.yaml` and `experiment.resume-<step>.json`, keeping the original
+run records. Checkpoints and these artifacts are written to a temporary file in
+the destination directory and replaced atomically after a successful write.
+
 New checkpoints include the resolved config (including defaults and seed),
 training/validation camera poses, intrinsics and split indices, scene transforms,
 camera-depth bounds and render-path settings,
@@ -234,6 +304,11 @@ uv run --locked python eval.py --mode render \
   --checkpoint ./models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth --output ./renders/nerf_fern_spiral
 ```
 
+Evaluation refuses nonempty output directories. Choose a fresh `--output`, or
+add `--overwrite` to replace generated `frame_*.png`, `test_*.png` and metrics.
+This removes stale frames when a later render has fewer views and preserves
+unrelated files.
+
 `num_render_poses` controls frame count. Lego's `render_orbit_elevation` (degrees)
 and `render_orbit_radius` (world units) control its orbit. Fern's
 `render_spiral_rotations`, `render_spiral_zrate` and `render_spiral_radius_scale`
@@ -244,10 +319,56 @@ they change novel render cameras, without changing training or test cameras.
 
 `--config` can override rendering sample count, chunk size and pose count; it
 rejects conflicting model settings or ray bounds. Legacy checkpoints still need
-the original config and warn that compatibility cannot be checked. Checkpoints
-record the seed but do not restore RNG or DataLoader state, so resumed training
-is not guaranteed to match an uninterrupted run exactly. Dataset images are not
-embedded in checkpoints.
+the original config and warn that compatibility cannot be checked. New checkpoints also save Python, NumPy, Torch and CUDA RNG states and the
+committed pixel-sampler state. Interrupted forwards resume from the last
+completed update's random/sampling state. Validation uses separate randomness.
+For reproducible runs, set `seed: 42` (or another unsigned 32-bit integer) and
+`deterministic: true` in YAML. This enables Torch's deterministic algorithms
+and disables cuDNN benchmarking; unsupported deterministic operations fail
+explicitly. The actual determinism/backend settings are recorded. Matching an
+uninterrupted trajectory requires the same data, execution settings, software
+and hardware; it is not guaranteed across devices or versions. Legacy
+checkpoints without RNG/sampling state warn that exact resume is unavailable.
+Dataset images are not embedded in checkpoints.
+
+### Training and rendering memory
+
+Training stores RGB images and per-camera matrices, and generates ray geometry
+only for the selected image/pixel indices in each batch. It does not allocate
+full-scene origin/direction arrays or a full-scene shuffle permutation. Camera
+metadata descriptions also avoid copying RGB splits. A virtual 100-view,
+800×800 scene test samples 1,024 rays with less than 2 MiB of temporary allocation;
+the actual float32 RGB images alone still occupy about 732 MiB at that size.
+
+For baseline `no_batching: true`, each update selects one image and samples its
+pixels, honoring the configured initial center crop. Otherwise batches sample
+uniformly across training views. Sampling is without replacement within a batch,
+but batches are independent: global sampling no longer consumes a shuffled
+whole-scene epoch as the original implementation did. Checkpoints record this
+protocol and the compact committed sampler RNG state. Worker prefetch can build
+future batches, but checkpoint progress advances only after a successful update.
+`num_workers: 0` avoids worker/prefetch overhead; additional workers can increase
+host memory, particularly on platforms that copy dataset images when spawning.
+
+Use `dataset_factor` to downsample either dataset before ray generation. Image
+dimensions, intrinsics and split indices remain explicit in checkpoint metadata;
+evaluation uses the same resolution. Blender's `half_res` multiplies its factor
+by two when enabled. Increasing the factor changes the experimental resolution,
+so keep it consistent when comparing results.
+
+Validation and evaluation generate camera rays in `chunk_size` blocks, transfer
+only those blocks to the rendering device, and immediately copy completed RGB
+chunks into a CPU image buffer. Both rendering paths also support
+`render_nerf(..., output_device='cpu')` inside `torch.no_grad()` for explicit
+inference output buffering. Keep input rays on CPU to avoid allocating a full
+image's rays on the GPU.
+
+During training, ray chunks and point-query chunks are concatenated before the
+single backward pass. Their autograd graphs retain the activations needed for
+the whole training batch. Reducing `chunk_size` or `netchunk` bounds individual
+operations and temporary workspace, but does **not** necessarily bound total
+retained activation memory. Reduce `num_random_rays`, sample counts or model
+width/depth when the training batch itself exceeds available GPU memory.
 
 ### Reference NeRF baseline
 
@@ -438,7 +559,7 @@ This check passed on the official archive on 2026-09-26 for all six cases:
 at 94×126. The downloader installed both scenes, retained Fern's cached factor-4
 and factor-8 images, and preserved existing scene paths on rerun. This verifies
 the CPU execution workflow on actual data. Full training at the example
-resolutions, GPU execution and reproduction of benchmark scores have not been
+resolutions, GPU runs on the downloaded scenes and reproduction of benchmark scores have not been
 verified by this check.
 
 ### Render a video

@@ -2,10 +2,35 @@
 
 import numpy as np
 from PIL import Image
+from pathlib import Path
+
+
+def validate_rgb_images(images):
+    """Check the in-memory contract without implicitly converting encoded pixels."""
+    if not isinstance(images, np.ndarray) or images.ndim != 4 or images.shape[-1] != 3 \
+            or any(size < 1 for size in images.shape[:3]):
+        raise ValueError('Images must be a nonempty N x H x W x 3 array')
+    if not np.issubdtype(images.dtype, np.floating) or any(
+            not np.isfinite(image).all() or image.min() < 0 or image.max() > 1 for image in images):
+        raise ValueError('Images must contain finite floating-point RGB values in [0, 1]')
 
 
 def read_image(path, *, factor=1, white_background=False, reference_blender=False):
+    """Decode 8-bit RGB/RGBA PNG or RGB JPEG to float32 RGB in [0, 1]."""
+    if type(factor) is not int or factor < 1:
+        raise ValueError('Image downsampling factor must be a positive integer')
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(f'Dataset image is missing: {path}; check the metadata path and downloaded files')
     with Image.open(path) as source:
+        if source.format not in ('PNG', 'JPEG'):
+            raise ValueError(f'Expected an 8-bit RGB/RGBA PNG or RGB JPEG: {path}')
+        # Pillow silently converts 16-bit RGB PNG to 8-bit; reject it before decoding.
+        if source.format == 'PNG':
+            with path.open('rb') as file:
+                header = file.read(26)
+            if len(header) < 26 or header[24] != 8:
+                raise ValueError(f'Expected 8-bit PNG channels: {path}; convert explicitly before loading')
         if source.mode not in ('RGB', 'RGBA'):
             raise ValueError(f'Expected RGB or RGBA image, got {source.mode}: {path}')
         width, height = source.size

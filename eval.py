@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 import argparse
 import os
 import csv
@@ -8,14 +7,15 @@ import math
 import imageio
 from tqdm import tqdm
 
-from modules.data import load_configured_scene, camera_rays
-from modules.ndc import ndc_camera_rays
+from modules.data import load_configured_scene
 from modules.model_factory import create_model
-from modules.rendering import render_nerf
+from modules.rendering import render_camera
+from modules.runtime import add_runtime_arguments, runtime_overrides, resolve_device, prepare_model
 from modules.scene import SceneNormalization, resolve_scene_normalization
 from modules.utils import load_checkpoint, parse_config
 from modules.camera import configured_render_path, render_camera_path
 from modules.experiment import resolve_experiment_config
+from modules.run_state import configure_reproducibility, prepare_output
 
 
 def image_metrics(prediction, target):
@@ -61,10 +61,6 @@ def write_metrics(rows, output_dir, settings):
 
 
 def main():
-    # Device configuration
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
-
     # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Evaluate test views or render a novel-view trajectory."
@@ -79,21 +75,24 @@ def main():
                         help='Render the scene camera path (default), or score every ground-truth test view')
     parser.add_argument('--dataset-path', type=str,
                         help='Override the dataset location for test evaluation')
+    add_runtime_arguments(parser)
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Replace generated frames and metrics in an existing output directory')
     args = parser.parse_args()
     checkpoint = load_checkpoint(args.checkpoint)
     if args.config is None and 'experiment' not in checkpoint:
         parser.error('--config is required for legacy checkpoints')
     overrides = parse_config(args.config) if args.config else {}
+    overrides.update(runtime_overrides(args))
     if args.dataset_path is not None:
         overrides['dataset_path'] = args.dataset_path
     config = resolve_experiment_config(overrides, checkpoint)
+    device = resolve_device(config['device'])
+    print(f"Using device: {device}")
 
     # Reproducibility
     seed = int(config['seed'])
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if device.type == 'cuda':
-        torch.cuda.manual_seed_all(seed)
+    configure_reproducibility(seed, config['deterministic'])
 
     # Parameters
     dataset_path = config['dataset_path']
@@ -134,11 +133,7 @@ def main():
     # Load the model checkpoint
     model.load_state_dict(checkpoint['model_state_dict'])
 
-    # Compile for CUDA (if available)
-    if device.type == 'cuda':
-        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
-    else:
-        print("Skipping torch.compile: CPU-only environment")
+    model = prepare_model(model, config, device)
     
     # Test views use loaded cameras. Novel paths can render solely from saved metadata.
     dataset_metadata = checkpoint.get('experiment', {}).get('dataset', {})
@@ -176,7 +171,8 @@ def main():
     if args.mode == 'render':
         render_poses = render_camera_path(configured_render_path(path_settings, config), num_render_poses)
 
-    os.makedirs(output_dir, exist_ok=True)
+    prepare_output(output_dir, ('frame_*.png', 'test_*.png', 'metrics.json', 'metrics.csv'),
+                   overwrite=args.overwrite)
 
     # Initialize tqdm for the rendering loop
     render_loop = tqdm(
@@ -191,38 +187,14 @@ def main():
     rows = []
     for i in render_loop:
         camera = intrinsics[i:i + 1] if args.mode == 'test' else intrinsics
-        if config['dataset_type'] == 'llff':
-            rays_o_val_np, rays_d_val_np, view_directions = ndc_camera_rays(
-                height, width, render_poses[i:i + 1], camera)
-            view_options = {'view_directions': torch.from_numpy(view_directions[0]).to(device)}
-        else:
-            rays_o_val_np, rays_d_val_np = camera_rays(
-                height, width, render_poses[i:i + 1], camera, normalize=not reference_baseline)
-            view_options = {}
-        rays_o_val = torch.from_numpy(rays_o_val_np).float().to(device).squeeze(0)
-        rays_d_val = torch.from_numpy(rays_d_val_np).float().to(device).squeeze(0)
+        pred_val_rgb = render_camera(
+            model, height, width, render_poses[i], camera[0], near, far,
+            dataset_type=config['dataset_type'], num_samples=num_samples, device=device,
+            white_background=white_background, chunk_size=chunk_size,
+            scene_normalization=scene_normalization, netchunk=config['netchunk'],
+            **({'num_importance': int(config['num_importance']),
+                'lindisp': config['lindisp']} if reference_baseline else {}))
 
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        with torch.no_grad():
-            pred_val_rgb = render_nerf(
-                model,
-                rays_o_val,
-                rays_d_val,
-                near,
-                far,
-                num_samples=num_samples,
-                device=device,
-                white_background=white_background,
-                chunk_size=chunk_size,
-                stratified=False,
-                scene_normalization=scene_normalization,
-                **view_options,
-                **({'num_importance': int(config['num_importance']), 'netchunk': int(config['netchunk']),
-                    'lindisp': config['lindisp']} if reference_baseline else {})
-            )
-        
         # Reshape to image
         H_val, W_val = height, width
         pred_val_rgb = pred_val_rgb.reshape(H_val, W_val, 3).cpu().numpy()

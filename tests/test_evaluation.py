@@ -89,7 +89,8 @@ class EvaluationTests(unittest.TestCase):
             self.assertFalse(torch.is_grad_enabled())
             self.assertFalse(kwargs['stratified'])
             self.assertTrue(kwargs['white_background'])
-            self.assertEqual(len(origins), 6)
+            self.assertLessEqual(len(origins), 2)
+            self.assertEqual(kwargs['output_device'], 'cpu')
             seen.append((origins.clone(), directions.clone()))
             return torch.full((len(origins), 3), float(origins[0, 0]) / 4)
 
@@ -99,8 +100,11 @@ class EvaluationTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()), \
              patch('sys.argv', argv), patch.object(torch.cuda, 'is_available', return_value=False), \
              patch.object(evaluation, 'render_camera_path', side_effect=AssertionError('must use test poses')), \
-             patch.object(evaluation, 'render_nerf', render):
+             patch('modules.rendering.render_nerf', render):
             evaluation.main()
+        self.assertEqual(len(seen), 6)
+        seen = [(torch.cat([item[0] for item in seen[start:start + 3]]),
+                 torch.cat([item[1] for item in seen[start:start + 3]])) for start in (0, 3)]
         self.assertEqual(len(seen), 2)
         self.assertEqual(float(seen[0][0][0, 0]), 1)
         self.assertEqual(float(seen[1][0][0, 0]), 2)

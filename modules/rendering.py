@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch import Tensor
 from typing import Tuple
 
@@ -164,7 +165,8 @@ def render_nerf(
     scene_normalization: SceneNormalization = SceneNormalization(),
     num_importance=None, netchunk=65536, perturb=1.0, lindisp=False,
     raw_noise_std=0.0, return_aux=False,
-    view_directions: Tensor | None = None) -> Tensor | dict[str, Tensor]:
+    view_directions: Tensor | None = None,
+    output_device=None) -> Tensor | dict[str, Tensor]:
     """
     Render rays with a NeRF model via volumetric integration.
 
@@ -192,16 +194,21 @@ def render_nerf(
         num_importance (int, optional): Additional fine samples for reference NeRF.
         return_aux (bool): Return reference coarse/fine outputs for the two losses.
             Scene normalization is ignored for reference NeRF, matching upstream.
+        output_device: Optional inference output destination (e.g. 'cpu').
+            Completed chunks are copied into a preallocated output buffer.
+            Requires disabled gradients. Otherwise chunks retain their graphs
+            until concatenation/backpropagation; chunk_size does not cap that memory.
 
     Returns:
         Tensor: A tensor of shape [num_rays, 3] containing the rendered RGB colors.
     """
-    rays_o = rays_o.to(device)
-    rays_d = rays_d.to(device)
+    if netchunk <= 0 or chunk_size <= 0:
+        raise ValueError('Ray and network query chunk sizes must be positive')
+    if output_device is not None and torch.is_grad_enabled():
+        raise ValueError('output_device is for inference; use torch.no_grad()')
     if view_directions is None:
         view_directions = torch.nn.functional.normalize(rays_d, dim=-1)
     else:
-        view_directions = view_directions.to(device)
         if view_directions.shape != rays_d.shape:
             raise ValueError('Viewing directions must match geometry ray directions')
 
@@ -215,13 +222,15 @@ def render_nerf(
             chunk_size=chunk_size, netchunk=netchunk, stratified=stratified,
             perturb=perturb, lindisp=lindisp, white_background=white_background,
             raw_noise_std=raw_noise_std, view_directions=view_directions,
+            device=device, output_device=output_device,
         )
         return outputs if return_aux else outputs['rgb_map']
 
     rgb_out = []
+    output_buffer = None
     for i in range(0, rays_o.shape[0], chunk_size):
-        rays_o_chunk = rays_o[i:i + chunk_size]
-        rays_d_chunk = rays_d[i:i + chunk_size]
+        rays_o_chunk = rays_o[i:i + chunk_size].to(device)
+        rays_d_chunk = rays_d[i:i + chunk_size].to(device)
 
         if stratified:
             # Use the existing stratified sampling to generate sample positions and deltas.
@@ -251,18 +260,18 @@ def render_nerf(
         sample_positions_flat = sample_positions.reshape(-1, 3)
         directions_flat = (
             view_directions[i:i + chunk_size]
+            .to(device)
             .unsqueeze(1)
             .expand(-1, num_samples, -1)
             .reshape(-1, 3)
         )
 
         # Normalize positions and query the model to get colors and densities.
-        colors_flat, densities_flat = query_model(
-            model,
-            sample_positions_flat,
-            directions_flat,
-            scene_normalization
-        )
+        queries = [query_model(model, sample_positions_flat[start:start + netchunk],
+                               directions_flat[start:start + netchunk], scene_normalization)
+                   for start in range(0, len(sample_positions_flat), netchunk)]
+        colors_flat = torch.cat([colors for colors, _ in queries])
+        densities_flat = torch.cat([densities for _, densities in queries])
         
         colors = colors_flat.reshape(rays_o_chunk.shape[0], num_samples, 3)
         densities = densities_flat.reshape(rays_o_chunk.shape[0], num_samples)
@@ -272,6 +281,38 @@ def render_nerf(
         # parameter intervals to distances in the geometry ray's coordinate space.
         distances = deltas * torch.linalg.vector_norm(rays_d_chunk, dim=-1, keepdim=True)
         composed_rgb = composite_volume(colors, densities, distances, white_background)
-        rgb_out.append(composed_rgb)
+        if output_device is None:
+            rgb_out.append(composed_rgb)
+        else:
+            if output_buffer is None:
+                output_buffer = torch.empty((len(rays_o), 3), dtype=composed_rgb.dtype, device=output_device)
+            output_buffer[i:i + len(composed_rgb)].copy_(composed_rgb.to(output_device))
 
-    return torch.cat(rgb_out, dim=0)
+    return torch.cat(rgb_out, dim=0) if output_device is None else output_buffer
+
+
+@torch.no_grad()
+def render_camera(model, height, width, pose, intrinsics, near, far, *, dataset_type='blender',
+                  chunk_size=8192, device='cpu', **options):
+    """Render one camera with chunk-sized ray/GPU storage and a CPU RGB buffer."""
+    from modules.data import CameraRayGenerator
+    ordinary = getattr(model, '_orig_mod', model)
+    generator = CameraRayGenerator(height, width, np.asarray(pose).reshape(1, 4, 4),
+                                   np.asarray(intrinsics).reshape(1, 3, 3), dataset_type=dataset_type,
+                                   normalize=not isinstance(ordinary, NeRF))
+    if chunk_size < 1:
+        raise ValueError('chunk_size must be positive')
+    output = None
+    for start in range(0, height * width, chunk_size):
+        pixels = np.arange(start, min(start + chunk_size, height * width))
+        rays = generator.rays(np.zeros(len(pixels), dtype=np.int64), pixels)
+        viewing = {'view_directions': torch.from_numpy(rays[2])} if len(rays) == 3 else {}
+        rgb = render_nerf(model, torch.from_numpy(rays[0]), torch.from_numpy(rays[1]), near, far,
+                          device=device, chunk_size=chunk_size,
+                          **{**options, 'stratified': False, 'output_device': 'cpu'}, **viewing)
+        if isinstance(rgb, dict):
+            rgb = rgb['rgb_map']
+        if output is None:
+            output = torch.empty((height * width, 3), dtype=rgb.dtype)
+        output[start:start + len(pixels)].copy_(rgb)
+    return output

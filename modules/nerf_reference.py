@@ -80,7 +80,7 @@ def render_reference_nerf(model, rays_o, rays_d, near, far, num_samples=64,
                           num_importance=128, chunk_size=1024, netchunk=65536,
                           stratified=True, perturb=1.0, lindisp=False,
                           white_background=True, raw_noise_std=0.0,
-                          view_directions=None):
+                          view_directions=None, device=None, output_device=None):
     """Coarse/fine rendering with separate geometry and world viewing directions."""
     if num_samples < 2 or (num_importance > 0 and num_samples < 3):
         raise ValueError('Reference rendering needs >=2 coarse samples (>=3 with importance sampling)')
@@ -96,13 +96,17 @@ def render_reference_nerf(model, rays_o, rays_d, near, far, num_samples=64,
         raise ValueError('Ray directions must be nonzero')
     if view_directions is not None and view_directions.shape != rays_d.shape:
         raise ValueError('Viewing directions must match geometry ray directions')
+    if output_device is not None and torch.is_grad_enabled():
+        raise ValueError('output_device is for inference; use torch.no_grad()')
+    device = rays_o.device if device is None else device
     results = {}
     jitter = stratified and perturb > 0
     noise = raw_noise_std if stratified else 0.0
     for start in range(0, len(rays_o), chunk_size):
-        origins, directions = rays_o[start:start + chunk_size], rays_d[start:start + chunk_size]
+        origins = rays_o[start:start + chunk_size].to(device)
+        directions = rays_d[start:start + chunk_size].to(device)
         viewdirs = (directions / torch.linalg.vector_norm(directions, dim=-1, keepdim=True)
-                    if view_directions is None else view_directions[start:start + chunk_size])
+                    if view_directions is None else view_directions[start:start + chunk_size].to(device))
         depths = sample_depths(directions, near, far, num_samples, jitter, lindisp)
         positions = origins[:, None, :] + directions[:, None, :] * depths[..., None]
         coarse = raw_to_outputs(query_network(model, positions, viewdirs, False, netchunk),
@@ -121,8 +125,14 @@ def render_reference_nerf(model, rays_o, rays_d, near, far, num_samples=64,
             outputs.update(rgb0=coarse['rgb_map'], disp0=coarse['disp_map'],
                            acc0=coarse['acc_map'], z_std=importance.std(dim=-1, unbiased=False))
         for key, value in outputs.items():
-            results.setdefault(key, []).append(value)
-    return {key: torch.cat(value) for key, value in results.items()}
+            if output_device is None:
+                results.setdefault(key, []).append(value)
+            else:
+                if key not in results:
+                    results[key] = torch.empty((len(rays_o), *value.shape[1:]),
+                                               dtype=value.dtype, device=output_device)
+                results[key][start:start + len(value)].copy_(value.to(output_device))
+    return {key: torch.cat(value) for key, value in results.items()} if output_device is None else results
 
 
 class KerasAdam(torch.optim.Optimizer):

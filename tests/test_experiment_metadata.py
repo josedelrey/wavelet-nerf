@@ -68,16 +68,19 @@ class ExperimentMetadataTests(unittest.TestCase):
                 outputs = []
 
                 def render(model, rays_o, *args, **kwargs):
+                    self.assertEqual(kwargs['device'], torch.device('cpu'))
+                    self.assertEqual(kwargs['netchunk'], 2)
                     with torch.no_grad():
                         outputs.append(model(positions, directions))
                     return torch.zeros(len(rays_o), 3)
 
-                argv = ['eval.py', '--checkpoint', str(path), '--output', str(self.root / name)]
+                argv = ['eval.py', '--checkpoint', str(path), '--output', str(self.root / name),
+                        '--device', 'cpu', '--no-compile', '--netchunk', '2']
                 with contextlib.redirect_stdout(io.StringIO()), \
                      patch('sys.argv', argv), \
-                     patch.object(evaluate.torch.cuda, 'is_available', return_value=False), \
+                     patch.object(torch.cuda, 'is_available', return_value=False), \
                      patch.object(evaluate, 'load_configured_scene', side_effect=AssertionError('must use saved intrinsics')), \
-                     patch.object(evaluate, 'render_nerf', render):
+                     patch('modules.rendering.render_nerf', render):
                     evaluate.main()
                 self.assertEqual(len(outputs), 1)
                 expected = original(positions, directions)

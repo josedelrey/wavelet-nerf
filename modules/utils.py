@@ -4,6 +4,7 @@ import torch
 from tqdm import tqdm
 from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
 
+from modules.run_state import atomic_write
 from modules.loss import mse_to_psnr
 from modules.configuration import parse_config  # noqa: F401 - retained public import
 
@@ -44,7 +45,7 @@ def load_checkpoint(checkpoint_path):
 
 
 def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, experiment_name,
-                    scene_normalization=None, experiment=None):
+                    scene_normalization=None, experiment=None, training_state=None):
     """
     Save a training checkpoint with step equal to completed optimizer updates.
     """
@@ -66,7 +67,9 @@ def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, ex
         checkpoint_dict['format_version'] = 2
         checkpoint_dict['experiment'] = experiment
     model_filename = os.path.join(save_path, f"{experiment_name}_{step:06d}.pth")
-    torch.save(checkpoint_dict, model_filename)
+    if training_state is not None:
+        checkpoint_dict['training_state'] = training_state
+    atomic_write(model_filename, lambda file: torch.save(checkpoint_dict, file))
     return model_filename
 
 

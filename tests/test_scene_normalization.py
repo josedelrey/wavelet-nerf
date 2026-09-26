@@ -133,7 +133,7 @@ class SceneNormalizationTests(unittest.TestCase):
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(patch('sys.argv', ['eval.py', '--config', 'unused',
                                                   '--checkpoint', 'unused', '--output', directory]))
-            stack.enter_context(patch.object(evaluation.torch.cuda, 'is_available', return_value=False))
+            stack.enter_context(patch.object(torch.cuda, 'is_available', return_value=False))
             stack.enter_context(patch.object(evaluation, 'parse_config', return_value=config))
             stack.enter_context(patch.object(evaluation, 'load_checkpoint', return_value=checkpoint))
             scene = SimpleNamespace(
@@ -142,7 +142,7 @@ class SceneNormalizationTests(unittest.TestCase):
                 render_path={'type': 'orbit', 'elevation': -30., 'radius': 4.},
             )
             stack.enter_context(patch.object(evaluation, 'load_configured_scene', return_value=scene))
-            render = stack.enter_context(patch.object(evaluation, 'render_nerf',
+            render = stack.enter_context(patch('modules.rendering.render_nerf',
                                                      return_value=torch.zeros(1, 3)))
             evaluation.main()
             self.assertEqual(render.call_args.kwargs['scene_normalization'], transform)

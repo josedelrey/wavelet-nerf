@@ -9,11 +9,14 @@ import warnings
 
 import torch
 
+from modules.run_state import determinism_settings
+
 from modules.configuration import (_COMMON, _MODEL, normalize_config, validate_resolved_config)
 
 
-_TRAINING = {'seed', 'num_random_rays', 'num_samples', 'learning_rate',
+_TRAINING = {'seed', 'deterministic', 'num_random_rays', 'num_samples', 'learning_rate',
              'lr_decay', 'lr_decay_factor', 'lr_min'}
+_RUNTIME = {'device', 'compile_model', 'num_workers'}
 
 
 def _canonicalize_save_path(config):
@@ -43,6 +46,8 @@ def resolve_experiment_config(config, checkpoint=None, *, training=False):
         if 'save_path' in saved:
             saved.pop('save_root', None)
         saved = _canonicalize_save_path(normalize_config(saved, legacy=True))
+        # Execution choices belong to this invocation, rather than the saved hardware.
+        saved = {key: value for key, value in saved.items() if key not in _RUNTIME}
     if checkpoint is not None and saved is None:
         warnings.warn('Legacy checkpoint has no experiment metadata; compatibility '
                       'cannot be verified. Supply the original config.', stacklevel=2)
@@ -184,6 +189,7 @@ def experiment_metadata(config, splits, scene_normalization, dataset_metadata=No
         'code': {'revision': revision, 'dirty': dirty},
         'environment': {
             'python': platform.python_version(),
+            'determinism': determinism_settings(),
             'platform': platform.platform(),
             'machine': platform.machine(),
             **accelerator_metadata(device),

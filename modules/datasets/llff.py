@@ -16,13 +16,18 @@ from .types import SceneData
 def load_llff_scene(dataset_path, *, factor=8, holdout=8, bounds_scale=0.75,
                     recenter=True, splits=('train', 'val', 'test'),
                     white_background=False, num_render_poses=120):
-    if holdout < 2:
+    if type(holdout) is not int or holdout < 2:
         raise ValueError('LLFF holdout interval must be at least 2')
     if not np.isfinite(bounds_scale) or bounds_scale <= 0:
         raise ValueError('LLFF bounds_scale must be finite and positive')
     root = Path(dataset_path)
-    rows = np.load(root / 'poses_bounds.npy', allow_pickle=False)
-    if rows.ndim != 2 or rows.shape[1] != 17 or len(rows) < 2 or not np.isfinite(rows).all():
+    pose_path = root / 'poses_bounds.npy'
+    if not pose_path.is_file():
+        raise FileNotFoundError(f'Missing LLFF camera metadata: {pose_path}; download poses_bounds.npy with the images')
+    rows = np.load(pose_path, allow_pickle=False)
+    if rows.ndim != 2 or rows.shape[1] != 17 or len(rows) < 2 \
+            or not np.issubdtype(rows.dtype, np.number) or not np.isrealobj(rows) \
+            or not np.isfinite(rows).all():
         raise ValueError('poses_bounds.npy must be a finite N x 17 array with at least two views')
     source_poses = rows[:, :15].reshape(-1, 3, 5).astype(np.float64)
     bounds = rows[:, -2:].astype(np.float64)
@@ -34,6 +39,9 @@ def load_llff_scene(dataset_path, *, factor=8, holdout=8, bounds_scale=0.75,
 
     cached = root / f'images_{factor}'
     image_dir = cached if factor != 1 and cached.is_dir() else root / 'images'
+    if not image_dir.is_dir():
+        raise FileNotFoundError(f'Missing LLFF image directory: {image_dir}; '
+                                f'provide images/ or images_{factor}/ with RGB PNG/JPEG files')
     paths = sorted(path for path in image_dir.iterdir()
                    if path.is_file() and path.suffix.lower() in ('.jpg', '.jpeg', '.png'))
     if len(paths) != len(rows):
