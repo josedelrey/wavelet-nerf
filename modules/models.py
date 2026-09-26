@@ -359,11 +359,11 @@ class WaveletNet(MFNBase):
             if self.normalized:
                 f = self.filter_norms[i](f)
 
-            l = self.linear[i-1](out)
+            linear_out = self.linear[i-1](out)
             if self.normalized:
-                l = self.linear_norms[i-1](l)
+                linear_out = self.linear_norms[i-1](linear_out)
 
-            out = f * l
+            out = f * linear_out
 
         # Final linear output
         out = self.output_linear(out)

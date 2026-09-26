@@ -15,7 +15,7 @@ from modules.models import WaveletNeRF
 from modules.rendering import render_nerf
 from modules.loss import mse_to_psnr
 from modules.utils import parse_config, format_elapsed_time
-from modules.utils import save_checkpoint, log_training_metrics
+from modules.utils import load_checkpoint, save_checkpoint, log_training_metrics, get_checkpoint_step
 
 
 def main():
@@ -81,8 +81,8 @@ def main():
 
     # Resume training from checkpoint if specified
     if args.resume is not None:
-        checkpoint_temp = torch.load(args.resume, map_location='cpu', weights_only=True)
-        model_type = checkpoint_temp.get('model_type', config.get('model_type', 'NeRF')).lower()
+        checkpoint = load_checkpoint(args.resume)
+        model_type = checkpoint.get('model_type', config.get('model_type', 'NeRF')).lower()
         print(f"Resuming training with model type from checkpoint: {model_type}")
     else:
         existing_logs  = os.listdir(log_dir)
@@ -181,7 +181,7 @@ def main():
     print(f"Log interval: {log_interval}")
     print(f"Validation interval: {val_interval}")
     print(f"Log directory: {log_dir}")
-    print(f"===========================================")
+    print("===========================================")
     print("\n========== Model Hyperparameters ==========")
     print(f"Model type: {model_type}")
 
@@ -211,14 +211,8 @@ def main():
         print(f"omega0: {omega0}")
         print(f"normalized: {normalized_flag}")
 
-    print(f"===========================================\n")
+    print("===========================================\n")
     
-    # Compile the model for performance optimization
-    if device.type == 'cuda':
-        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
-    else:
-        print("Skipping torch.compile: CPU-only environment")
-
     # Load the training dataset
     print("Loading training dataset...")
     images_np, c2w_matrices_np, focal_length = load_dataset(dataset_path, mode='train')
@@ -227,7 +221,7 @@ def main():
     # Load the validation dataset
     print("Loading validation dataset...")
     images_val_np, c2w_val_np, focal_length_val = load_dataset(dataset_path, mode='val')
-    N_val, H_val, W_val, _ = images_np.shape
+    N_val, H_val, W_val, _ = images_val_np.shape
 
     # Create the dataset and DataLoader
     dataset = RayDataset(rays_o, rays_d, target_pixels)
@@ -254,20 +248,31 @@ def main():
     start_iter = 0
     start_time = datetime.datetime.now()
     if args.resume is not None:
-        checkpoint = torch.load(args.resume, map_location='cpu', weights_only=True)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        start_iter = checkpoint['step']
+        start_iter = get_checkpoint_step(checkpoint)
         print(f"Resuming training from iteration {start_iter}")
-        writer_kwargs['purge_step'] = start_iter
+        writer_kwargs['purge_step'] = start_iter + 1
+    if not 0 <= start_iter <= num_iters:
+        raise ValueError('Completed checkpoint updates must be between 0 and num_iters')
+
+    # Restore before compilation, which keeps the optimizer's parameter objects.
+    if device.type == 'cuda':
+        model = torch.compile(model, backend="inductor", mode="reduce-overhead")
+    else:
+        print("Skipping torch.compile: CPU-only environment")
+
     writer = SummaryWriter(**writer_kwargs)
     writer.add_text('config', str(config))
 
+    # Track completed updates independently of the next iteration, including
+    # interruption before the first update or during a later forward pass.
+    completed_steps = start_iter
     # Training loop
     try:
         with tqdm(total=num_iters, initial=start_iter, desc="Training", unit="it") as pbar:
-            for step in range(start_iter, num_iters):
+            for step in range(start_iter + 1, num_iters + 1):
                 try:
                     rays_o_batch, rays_d_batch, target_rgb_batch = next(loader_iter)
                 except StopIteration:
@@ -296,14 +301,17 @@ def main():
                 loss = mse_loss(pred_rgb, target_rgb_batch)
                 loss.backward()
                 optimizer.step()
+                completed_steps = step
                 scheduler.step()
 
+                pbar.update(1)
+
                 # Log metrics and write to TensorBoard
-                if step % log_interval == 0:
+                if step == 1 or step % log_interval == 0:
                     log_training_metrics(step, scheduler, loss, start_time, writer)
 
                 # Save checkpoint
-                if step % save_interval == 0 and step > 0 and step < num_iters - 1:
+                if step % save_interval == 0 and step < num_iters:
                     model_filename = save_checkpoint(step, 
                                                      model, 
                                                      optimizer, 
@@ -315,7 +323,7 @@ def main():
                     tqdm.write(f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}")
 
                 # Log validation metrics
-                if step % val_interval == 0 and (step > 0 or first_step_render):
+                if step % val_interval == 0 or (step == 1 and first_step_render):
                     # Select a random image and render it for validation
                     test_image_index = np.random.randint(N_val)
                     single_val_image = images_val_np[test_image_index:test_image_index+1]
@@ -367,11 +375,8 @@ def main():
                     tqdm.write(f"Validation Debug: Logging complete for iteration {step}.")
                     tqdm.write(f"[Validation Step] Iter {step}  PSNR: {val_psnr:.2f}")
 
-                # Update progress bar
-                pbar.update(1)
-
             # Save final model after training is complete
-            final_model_path = save_checkpoint(num_iters, 
+            final_model_path = save_checkpoint(completed_steps,
                                                model, 
                                                optimizer, 
                                                scheduler, 
@@ -386,7 +391,7 @@ def main():
         # Save checkpoint on keyboard interrupt
         elapsed_str = format_elapsed_time(start_time)
         tqdm.write(f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint...")
-        interrupt_checkpoint_path = save_checkpoint(step, 
+        interrupt_checkpoint_path = save_checkpoint(completed_steps,
                                                     model, 
                                                     optimizer, 
                                                     scheduler, 
@@ -394,6 +399,8 @@ def main():
                                                     model_type,
                                                     experiment_name)
         tqdm.write(f"[{elapsed_str}] Checkpoint saved to {interrupt_checkpoint_path}. Exiting training.")
+    finally:
+        writer.close()
 
 
 if __name__ == '__main__':

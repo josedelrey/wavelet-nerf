@@ -34,6 +34,8 @@ def load_dataset(dataset_path: str,
 
     camera_angle_x = meta["camera_angle_x"]
     frames = meta["frames"]
+    if not frames:
+        raise ValueError(f"Dataset split '{mode}' contains no frames: {transforms_path}")
 
     images = []
     c2w_matrices = []

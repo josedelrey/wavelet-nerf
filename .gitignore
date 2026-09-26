@@ -1,9 +1,23 @@
-__pycache__
-logs
-datasets
-models
-rendered_frames
-graveyard
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Downloaded data and generated outputs
+/logs/
+/datasets/
+/models/
+/rendered_frames/
+/renders/
+/videos/
+/graveyard/
+
+# Local research notes and helper scripts
 experiments.md
 aux_scripts
-videos

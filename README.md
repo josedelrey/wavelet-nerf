@@ -1,4 +1,4 @@
-# NeRF-PyTorch
+# Wavelet-NeRF
 
 
 [NeRF](http://www.matthewtancik.com/nerf) (Neural Radiance Fields) is a method that achieves state-of-the-art results for synthesizing novel views of complex scenes. This project is a PyTorch implementation of NeRF, extended with [SIREN-based](https://arxiv.org/abs/2006.09661) and [MFN-based](https://arxiv.org/abs/2011.13961) NeRF variants. The code is based on the authors' original TensorFlow implementation [here](https://github.com/bmild/nerf).
@@ -10,25 +10,29 @@ dataset.
 
 ## Installation
 
-```
-git clone https://github.com/josedelrey/nerf-pytorch.git
-cd nerf-pytorch
-conda env create -f environment.yml
-conda activate nerf-pytorch
+Use Python 3.10–3.13 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Run the following commands from the repository root:
+
+```bash
+git clone https://github.com/josedelrey/wavelet-nerf.git
+cd wavelet-nerf
+uv sync --locked
 ```
 
-<details>
-  <summary>Dependencies</summary>
+`uv sync --locked` installs the versions recorded in `uv.lock` into `.venv/`,
+including the development linter. Add `--no-dev` to both `uv sync` and `uv run`
+commands to omit development tools. `uv run` uses this environment without
+activating it.
 
-  ## Dependencies
-  - Python 3.8+
-  - PyTorch 2.0+  (GPU optional)
-  - numpy
-  - imageio
-  - pillow
-  - tqdm
-  - tensorboard
-</details>
+Dependencies and project metadata are defined in `pyproject.toml`. The project
+is configured with `package = false`: uv manages its dependencies without
+building or installing this repository as a distribution.
+
+Training and rendering use CUDA when PyTorch detects a compatible NVIDIA GPU,
+and otherwise run on CPU. PyTorch is installed from PyPI using the build for
+your platform; on Linux, this may include CUDA runtime dependencies. GPU use
+still requires a compatible NVIDIA driver. The former Conda environment is
+replaced by the uv setup.
 
 ## How To Run?
 
@@ -53,19 +57,19 @@ with the current training and rendering code.
 Train the **baseline NeRF** on `lego`:
 
 ```
-python train.py --config config/config_nerf_lego.txt
+uv run --locked python train.py --config config/config_nerf_lego.txt
 ```
 
 Train the **SIREN-NeRF** on `lego`:
 
 ```
-python train.py --config config/config_siren_lego.txt
+uv run --locked python train.py --config config/config_siren_lego.txt
 ```
 
 Train the **MFN (WaveletNet) NeRF** on `lego`:
 
 ```
-python train.py --config config/config_wavelet_lego.txt
+uv run --locked python train.py --config config/config_wavelet_lego.txt
 ```
 
 Logs are saved in:
@@ -83,7 +87,7 @@ Model checkpoints are saved in:
 Resume training from a checkpoint:
 
 ```
-python train.py --config config/<your_config>.txt --resume ./models/<exp>/<exp>_050000.pth
+uv run --locked python train.py --config config/<your_config>.txt --resume ./models/<exp>/<exp>_050000.pth
 ```
 
 ### More Datasets
@@ -117,17 +121,19 @@ dataset_path = ./datasets/chair
 Then run:
 
 ```
-python train.py --config config/config_nerf_chair.txt
+uv run --locked python train.py --config config/config_nerf_lego.txt
 ```
 
+This example uses the existing baseline config after changing its dataset path.
+Also choose a new `experiment_name` so its outputs are separate from Lego runs.
 
 ### Render a video
 
 Once you have trained a model, render frames with:
 ```
-python eval.py \
+uv run --locked python eval.py \
   --config config/config_nerf_lego.txt \
-  --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
+  --checkpoint ./models/nerf/nerf_250000.pth \
   --output ./renders/nerf_lego_eval
 ```
 
@@ -136,6 +142,30 @@ Then you can make a video with this ffmpeg command:
 ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png \
   -c:v libx264 -pix_fmt yuv420p -crf 18 ./renders/nerf_lego_eval.mp4
 ```
+
+FFmpeg is an external command required only for this video conversion step.
+Inspect training logs with:
+
+```bash
+uv run --locked tensorboard --logdir logs
+```
+
+## Development
+
+Run the dependency, lint, and command-line checks used in CI:
+
+```bash
+uv sync --locked
+uv run --locked ruff check .
+uv run --locked python train.py --help
+uv run --locked python eval.py --help
+uv run --locked python -m unittest discover -s tests
+```
+
+Use `uv add <dependency>` or `uv add --dev <tool>` when changing dependencies,
+and commit both `pyproject.toml` and `uv.lock`. To update an existing dependency
+deliberately, run `uv lock --upgrade-package <dependency>`, then
+`uv sync --locked` and the checks above. No distribution build is required.
 
 ## Method
 

@@ -1,0 +1,33 @@
+[project]
+name = "wavelet-nerf"
+version = "0.1.0"
+description = "PyTorch experiments with NeRF, SIREN, and wavelet multiplicative filter networks."
+readme = "README.md"
+authors = [{ name = "José del Rey" }]
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "torch>=2.2",
+    "numpy>=1.26",
+    "Pillow>=10.0",
+    "imageio>=2.34",
+    "tensorboard>=2.16",
+    "tqdm>=4.66",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.16.7"]
+
+[project.urls]
+Repository = "https://github.com/josedelrey/wavelet-nerf"
+Issues = "https://github.com/josedelrey/wavelet-nerf/issues"
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

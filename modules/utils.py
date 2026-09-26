@@ -2,6 +2,7 @@ import os
 import datetime
 import torch
 from tqdm import tqdm
+from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
 
 from modules.loss import mse_to_psnr
 
@@ -47,12 +48,35 @@ def format_elapsed_time(start_time: datetime.datetime) -> str:
     )
 
 
+def get_checkpoint_step(checkpoint):
+    """Return completed updates, including checkpoints with legacy loop-index steps."""
+    if checkpoint.get('step_semantics') == 'completed_updates':
+        return checkpoint['step']
+    # LambdaLR advances once per optimizer update. Unlike the old step field,
+    # its last_epoch is consistent for periodic, final, and interrupted saves.
+    return checkpoint['scheduler_state_dict']['last_epoch']
+
+
+def load_checkpoint(checkpoint_path):
+    """Load on CPU, accepting legacy torch.compile parameter names and metadata."""
+    checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+    state_dict = checkpoint['model_state_dict']
+    while any(key.startswith('_orig_mod.') for key in state_dict):
+        consume_prefix_in_state_dict_if_present(state_dict, '_orig_mod.')
+    return checkpoint
+
+
 def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, experiment_name):
     """
-    Save the training checkpoint.
+    Save a training checkpoint with step equal to completed optimizer updates.
     """
+    # Compilation wraps the same parameters. Save the underlying module so
+    # destination devices do not need to use the same compilation mode.
+    while hasattr(model, '_orig_mod'):
+        model = model._orig_mod
     checkpoint_dict = {
         'step': step,
+        'step_semantics': 'completed_updates',
         'model_type': model_type,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),

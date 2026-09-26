@@ -4,12 +4,11 @@ import argparse
 import os
 import imageio
 from tqdm import tqdm
-from collections import OrderedDict
 
 from modules.data import load_dataset, compute_rays
 from modules.models import NeRF, Siren, WaveletNeRF
 from modules.rendering import render_nerf
-from modules.utils import parse_config
+from modules.utils import load_checkpoint, parse_config
 from modules.camera import pose_spherical
 
 
@@ -40,8 +39,8 @@ def main():
 
     # Parameters
     dataset_path = config.get('dataset_path', './datasets/lego')
-    checkpoint_temp = torch.load(args.checkpoint, map_location='cpu', weights_only=True)
-    model_type = checkpoint_temp.get('model_type', config.get('model_type', 'NeRF')).lower()
+    checkpoint = load_checkpoint(args.checkpoint)
+    model_type = checkpoint.get('model_type', config.get('model_type', 'NeRF')).lower()
     model_path = args.checkpoint
     output_dir = args.output
     os.makedirs(output_dir, exist_ok=True)
@@ -129,15 +128,7 @@ def main():
         raise ValueError(f"Invalid model type: {model_type}")
     
     # Load the model checkpoint
-    ckpt = torch.load(model_path, map_location='cpu', weights_only=True)
-    raw_state = ckpt['model_state_dict']
-    clean_state = OrderedDict()
-    for k, v in raw_state.items():
-        new_k = k[len("_orig_mod."):] if k.startswith("_orig_mod.") else k
-        clean_state[new_k] = v
-
-    # Load into your model
-    model.load_state_dict(clean_state)
+    model.load_state_dict(checkpoint['model_state_dict'])
 
     # Compile for CUDA (if available)
     if device.type == 'cuda':
