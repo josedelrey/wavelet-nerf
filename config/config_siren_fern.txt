@@ -20,6 +20,9 @@ log_interval = 100
 val_interval = 10000
 first_step_render = false
 num_render_poses = 120
+render_spiral_rotations = 2        # Turns around the recentered average camera
+render_spiral_zrate = 0.5          # Vertical oscillation rate per turn
+render_spiral_radius_scale = 1     # Multiplier on camera-position percentile radii
 
 # Experimental starting settings; no claim of reproduced Fern scores
 model_type = siren

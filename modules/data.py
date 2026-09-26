@@ -1,16 +1,18 @@
 """Shared scene loading and ray generation for Blender and LLFF datasets."""
 
 from typing import Tuple
+from dataclasses import replace
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 from modules.datasets import load_scene
+from modules.camera import configured_render_path, render_camera_path
 
 
 def load_configured_scene(config, *, splits=('train', 'val', 'test')):
-    return load_scene(
+    scene = load_scene(
         config['dataset_path'], config.get('dataset_type', 'blender'),
         factor=int(config.get('dataset_factor', 1)) *
                (2 if config.get('half_res', 'false').lower() == 'true' else 1), splits=splits,
@@ -22,6 +24,9 @@ def load_configured_scene(config, *, splits=('train', 'val', 'test')):
         num_render_poses=int(config.get('num_render_poses', 80)),
         testskip=int(config.get('testskip', 1)),
     )
+    path = configured_render_path(scene.render_path, config)
+    return replace(scene, render_path=path,
+                   render_poses=render_camera_path(path, int(config.get('num_render_poses', 80))))
 
 
 def resolve_sampling_bounds(config, scene):

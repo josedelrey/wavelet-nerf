@@ -12,6 +12,8 @@ experiment_name = nerf             # Name of this experiment's log subfolder
 # Dataset Parameters
 # --------------------
 dataset_path = ./datasets/lego     # Directory containing the dataset
+dataset_type = blender            # OpenGL camera poses; world-space geometry rays
+dataset_factor = 1                # Full resolution; splits come from their JSON files
 scene_center = 0.0, 0.0, 0.0       # World-space center of the scene cube
 scene_scale = 1.0                  # Reference NeRF uses original world coordinates
 
@@ -69,6 +71,8 @@ first_step_render = false          # First step validation render flag
 # Evaluation Render Parameters
 # --------------------
 num_render_poses = 80              # Number of frames of the evaluation video
+render_orbit_elevation = -30       # Degrees; orbit is centered at the source-world origin
+render_orbit_radius = 4            # World-space camera distance
 num_samples_eval = 64              # Coarse samples; 128 fine samples are added
 
 # --------------------

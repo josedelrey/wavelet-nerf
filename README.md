@@ -82,8 +82,12 @@ uv run --locked python train.py --config config/config_wavelet_fern.txt
 
 LLFF scenes require `poses_bounds.npy` and RGB images in `images/`, or an
 existing `images_<dataset_factor>/` directory. Image filenames are sorted
-lexicographically to match the pose rows. The reference NeRF config uses
-`dataset_factor = 4`; the experimental SIREN and wavelet configs use `8`.
+lexicographically to match the pose rows. `config_nerf_fern.txt` follows the
+[original factor-8 Fern quick start](https://github.com/bmild/nerf/blob/master/config_fern.txt),
+including 1,024 rays and 64 additional fine samples. Its explicit training budget
+is 200,000 updates. The SIREN and wavelet configs also use factor 8. To select
+the factor-4 paper settings, use `config/config_nerf_fern_paper.txt`; it has its
+own experiment name and retains 4,096 rays and 128 additional fine samples.
 Cached images are used at their existing resolution, otherwise Pillow
 resizes originals in memory. Loading does not write dataset files or require
 ImageMagick. Focal lengths are adjusted to the actual resized dimensions.
@@ -95,6 +99,17 @@ The loader converts LLFF camera axes, scales translations and depth bounds by
 the remaining views used for training. Validation and test use the same held-out
 views, following the original LLFF protocol. SIREN and wavelet Fern configs are
 experimental starting settings; their benchmark quality has not been verified.
+Checkpoints record the source indices, frame filenames, ordering, holdout stride
+and shared validation/test policy, so the held-out views are reproducible.
+Validation is therefore not an independent test set; avoid tuning on these
+views when reporting final benchmark results.
+
+Fern uses the [reference LLFF spiral](https://github.com/bmild/nerf/blob/master/load_llff.py):
+120 views over two rotations, with camera radii derived from the 90th percentile
+of camera positions and focus depth derived from scene bounds. Checkpoints save
+the spiral settings and render intrinsics. `eval.py --mode render` reconstructs
+the trajectory from those values without loading the dataset or a dummy image.
+`--mode test` renders the actual held-out camera poses against their images.
 
 `modules.datasets.load_scene` returns a `SceneData` containing RGB images,
 OpenGL camera-to-world poses, per-view 3×3 intrinsics, camera-depth bounds,
@@ -116,11 +131,22 @@ Model checkpoints are saved in:
 ./models/<experiment_name>/<experiment_name>_<step>.pth
 ```
 
-Resume training from a checkpoint:
+Resume training from a checkpoint, using the config for that experiment:
 
+```bash
+# Lego
+uv run --locked python train.py --config config/config_nerf_lego.txt \
+  --resume ./models/nerf/nerf_050000.pth
+
+# Fern
+uv run --locked python train.py --config config/config_nerf_fern.txt \
+  --resume ./models/nerf_fern/nerf_fern_050000.pth
 ```
-uv run --locked python train.py --config config/<your_config>.txt --resume ./models/<exp>/<exp>_050000.pth
-```
+
+Use a checkpoint that exists and set `num_iters` above its completed-update
+count to continue training. For SIREN or wavelet, substitute the corresponding
+config and experiment name: Lego uses `siren` or `wavelet`; Fern uses
+`siren_fern` or `wavelet_fern`.
 
 New checkpoints include the resolved config (including defaults and seed),
 training/validation camera poses, intrinsics and split indices, scene transforms,
@@ -136,6 +162,23 @@ Render a new checkpoint without the original config or dataset images:
 ```bash
 uv run --locked python eval.py --checkpoint ./models/<exp>/<exp>_050000.pth
 ```
+
+For the baseline examples, render a Lego orbit or a Fern spiral:
+
+```bash
+uv run --locked python eval.py --mode render \
+  --checkpoint ./models/nerf/nerf_050000.pth --output ./renders/nerf_lego_orbit
+uv run --locked python eval.py --mode render \
+  --checkpoint ./models/nerf_fern/nerf_fern_050000.pth --output ./renders/nerf_fern_spiral
+```
+
+`num_render_poses` controls frame count. Lego's `render_orbit_elevation` (degrees)
+and `render_orbit_radius` (world units) control its orbit. Fern's
+`render_spiral_rotations`, `render_spiral_zrate` and `render_spiral_radius_scale`
+control turns, vertical oscillation rate and the multiplier on the camera-derived
+spiral radii. Defaults preserve the original paths. These controls are saved in
+checkpoint metadata and may be overridden using an `eval.py --config` file;
+they change novel render cameras, without changing training or test cameras.
 
 `--config` can override rendering sample count, chunk size and pose count; it
 rejects conflicting model settings or ray bounds. Legacy checkpoints still need
@@ -278,6 +321,11 @@ uv run --locked python eval.py --mode test \
   --checkpoint ./models/nerf/nerf_250000.pth \
   --dataset-path ./datasets/lego \
   --output ./renders/nerf_lego_test
+
+uv run --locked python eval.py --mode test \
+  --checkpoint ./models/nerf_fern/nerf_fern_050000.pth \
+  --dataset-path ./datasets/fern \
+  --output ./renders/nerf_fern_test
 ```
 
 New checkpoints restore their model settings automatically. For legacy checkpoints,
@@ -302,6 +350,34 @@ predictions before PNG clipping or eight-bit quantization. Exact matches have
 infinite PSNR, represented as the string `"Infinity"` in standard JSON and `inf`
 in CSV. SSIM and LPIPS are not currently reported; PSNR alone should not be
 presented as a complete reproduction of a multi-metric published benchmark.
+
+### Verify the downloaded examples
+
+Run a short CPU check on the real downloaded data for all six combinations of
+Lego/Fern and NeRF/SIREN/wavelet:
+
+```bash
+bash download_dataset.sh
+uv run --locked python scripts/verify_examples.py
+```
+
+This uses each example's model architecture and scene conventions, but reduces
+resolution to factor 32, training to one update followed by a resume to two,
+sampling to four coarse samples (plus four fine samples for NeRF), and novel
+rendering to two frames. It runs validation, evaluates every test view, checks
+finite MSE/PSNR and output counts, and saves configs, logs, checkpoints, metrics,
+frames and `verification.json` in a fresh directory under
+`renders/example_verification/`. Generated outputs and downloaded data are
+ignored by Git. `--factor` and `--output` can change verification resolution
+and destination; the example configs themselves are never modified.
+
+This check passed on the official archive on 2026-09-26 for all six cases:
+200 Lego test images per model at 25×25 and three held-out Fern images per model
+at 94×126. The downloader installed both scenes, retained Fern's cached factor-4
+and factor-8 images, and preserved existing scene paths on rerun. This verifies
+the CPU execution workflow on actual data. Full training at the example
+resolutions, GPU execution and reproduction of benchmark scores have not been
+verified by this check.
 
 ### Render a video
 

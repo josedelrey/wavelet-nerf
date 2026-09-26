@@ -14,7 +14,7 @@ from modules.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
 from modules.rendering import render_nerf
 from modules.scene import SceneNormalization, resolve_scene_normalization
 from modules.utils import load_checkpoint, parse_config
-from modules.camera import render_camera_path
+from modules.camera import configured_render_path, render_camera_path
 from modules.experiment import resolve_experiment_config
 
 
@@ -219,14 +219,19 @@ def main():
                                          [0, 0, 1]]}
         height, width = camera['height'], camera['width']
         intrinsics = np.asarray(camera['matrix'], dtype=np.float32)[None]
-        path_settings = dataset_metadata.get('render_path', {'type': 'orbit', 'elevation': -30., 'radius': 4.})
+        path_settings = dataset_metadata.get('render_path')
+        if path_settings is None:
+            if config['dataset_type'] == 'llff':
+                raise ValueError('LLFF checkpoint is missing saved spiral settings; '
+                                 'use a checkpoint with scene/render-path metadata')
+            path_settings = {'type': 'orbit', 'elevation': -30., 'radius': 4.}
     else:
         scene = load_configured_scene(config, splits=('test',))
         height, width = scene.images.shape[1:3]
-        intrinsics = scene.intrinsics.mean(axis=0, keepdims=True)
+        intrinsics = scene.intrinsics[:1]
         path_settings = scene.render_path
     if args.mode == 'render':
-        render_poses = render_camera_path(path_settings, num_render_poses)
+        render_poses = render_camera_path(configured_render_path(path_settings, config), num_render_poses)
 
     # Initialize tqdm for the rendering loop
     render_loop = tqdm(
@@ -302,6 +307,7 @@ def main():
             'metric_input': 'unclipped, unquantized float RGB; full image; no mask or crop',
             'mse_dtype': 'float64', 'sampling': 'uniform; stratified=False',
             'dataset_type': config['dataset_type'],
+            'split_protocol': scene.split_protocol,
             'frame_order': 'sorted LLFF images, holdout subset' if config['dataset_type'] == 'llff'
                            else 'transforms_test.json frames',
             'intrinsics': intrinsics.tolist(),

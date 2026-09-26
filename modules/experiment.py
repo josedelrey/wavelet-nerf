@@ -66,7 +66,7 @@ def resolve_experiment_config(config, checkpoint=None, *, training=False):
     defaults['dataset_type'] = dataset_type
     if dataset_type == 'llff':
         defaults.update(near=0.0, far=1.0, dataset_factor=8,
-                        white_background=False, dataset_path='./datasets/fern')
+                        white_background=False, dataset_path='./datasets/fern', num_render_poses=120)
         if model_type == 'nerf':
             defaults.update(white_background=False, no_batching=False,
                             num_importance=64, raw_noise_std=1.0)

@@ -38,7 +38,7 @@ trap 'exit 143' TERM
 
 archive_path="$temp_dir/nerf_example_data.zip"
 extract_dir="$temp_dir/extracted"
-wget --tries=3 --timeout=30 --output-document="$archive_path" "$archive_url"
+wget --tries=3 --timeout=30 --progress=dot:giga --output-document="$archive_path" "$archive_url"
 unzip -q "$archive_path" 'nerf_synthetic/lego/*' 'nerf_llff_data/fern/*' -d "$extract_dir"
 
 lego_source="$extract_dir/nerf_synthetic/lego"

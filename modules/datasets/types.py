@@ -54,6 +54,7 @@ class SceneData:
     white_background: bool
     render_poses: np.ndarray
     render_path: dict
+    split_protocol: dict | None = None
 
     def __post_init__(self):
         count = len(self.images)
@@ -113,6 +114,7 @@ class SceneData:
             'sampling_bounds': list(self.sampling_bounds),
             'splits': {name: self.split(name).describe() for name in self.splits},
             'render_path': self.render_path,
+            **({'split_protocol': self.split_protocol} if self.split_protocol is not None else {}),
             'render_intrinsics': {'height': height, 'width': width,
-                                  'matrix': self.intrinsics.mean(axis=0).tolist()},
+                                  'matrix': self.intrinsics[0].tolist()},
         }

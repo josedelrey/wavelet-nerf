@@ -15,7 +15,7 @@ from .types import SceneData
 
 def load_llff_scene(dataset_path, *, factor=8, holdout=8, bounds_scale=0.75,
                     recenter=True, splits=('train', 'val', 'test'),
-                    white_background=False, num_render_poses=80):
+                    white_background=False, num_render_poses=120):
     if holdout < 2:
         raise ValueError('LLFF holdout interval must be at least 2')
     if not np.isfinite(bounds_scale) or bounds_scale <= 0:
@@ -76,6 +76,7 @@ def load_llff_scene(dataset_path, *, factor=8, holdout=8, bounds_scale=0.75,
         'up': poses[:, :3, 1].sum(axis=0).tolist(),
         'radii': np.percentile(np.abs(poses[:, :3, 3]), 90, axis=0).tolist(),
         'focus_depth': float(1 / (0.25 / close + 0.75 / distant)),
+        'rotations': 2, 'zrate': 0.5,
     }
     intrinsics = np.asarray(intrinsics, dtype=np.float32)
     return SceneData(
@@ -84,4 +85,8 @@ def load_llff_scene(dataset_path, *, factor=8, holdout=8, bounds_scale=0.75,
         tuple(path.relative_to(root).as_posix() for path in paths),
         world_to_scene.astype(np.float32), (0.0, 1.0), white_background,
         render_camera_path(path, num_render_poses), path,
+        split_protocol={'type': 'llff_every_nth', 'holdout_stride': holdout,
+                        'start_index': 0, 'ordering': 'lexicographically sorted image filenames',
+                        'train_indices': train.tolist(), 'val_indices': test.tolist(),
+                        'test_indices': test.tolist(), 'validation_uses_test_views': True},
     )

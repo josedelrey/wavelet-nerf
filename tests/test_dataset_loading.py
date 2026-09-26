@@ -25,7 +25,7 @@ def llff_fixture(root, count=4, height=6, width=10):
     rows = []
     # Reverse creation order to check deterministic image/pose pairing.
     for index in reversed(range(count)):
-        Image.fromarray(np.full((height, width, 3), index * 40, dtype=np.uint8)).save(
+        Image.fromarray(np.full((height, width, 3), (index * 40) % 256, dtype=np.uint8)).save(
             root / 'images' / f'{index:03d}.png')
     for index in range(count):
         pose = np.column_stack(([0, -1, 0], [1, 0, 0], [0, 0, 1],
@@ -120,6 +120,45 @@ class DatasetLoadingTests(unittest.TestCase):
         np.testing.assert_allclose(scene.poses[0, :3, 3], np.array([1, 2, 3]) * 2 / 3)
         self.assertEqual(scene.frame_paths[0], 'images_2/000.png')
 
+    def test_reference_eighth_view_holdout_and_spiral_equations(self):
+        root = self.root / 'fern_protocol'
+        llff_fixture(root, count=18)
+        scene = load_scene(root, 'llff', factor=1, llff_holdout=8)
+        held_out = [0, 8, 16]
+        self.assertEqual(scene.split('val').indices.tolist(), held_out)
+        self.assertEqual(scene.split('test').indices.tolist(), held_out)
+        self.assertEqual(scene.split('train').indices.tolist(),
+                         [index for index in range(18) if index not in held_out])
+        reloaded = load_scene(root, 'llff', factor=1, llff_holdout=8, splits=('train', 'val'))
+        protocol = reloaded.describe()['split_protocol']
+        self.assertEqual(protocol['holdout_stride'], 8)
+        self.assertEqual(protocol['test_indices'], held_out)
+        self.assertEqual(protocol['val_indices'], held_out)
+        self.assertTrue(protocol['validation_uses_test_views'])
+        self.assertEqual(scene.render_poses.shape, (120, 4, 4))
+
+        # Independent homogeneous equations from the reference spiral helper.
+        average = np.asarray(scene.render_path['average_pose'])
+        radii = np.r_[np.percentile(np.abs(scene.poses[:, :3, 3]), 90, axis=0), 1.]
+        close, distant = scene.bounds.min() * .9, scene.bounds.max() * 5
+        focus_depth = 1 / (.25 / close + .75 / distant)
+        focus = average[:3, :4] @ [0, 0, -focus_depth, 1]
+        up = scene.poses[:, :3, 1].sum(axis=0)
+        up = up / np.linalg.norm(up)
+        expected = []
+        for theta in np.linspace(0, 4 * np.pi, 121)[:-1]:
+            center = average[:3, :4] @ (np.array([np.cos(theta), -np.sin(theta),
+                                                -np.sin(theta * .5), 1]) * radii)
+            back = center - focus
+            back /= np.linalg.norm(back)
+            right = np.cross(up, back)
+            right /= np.linalg.norm(right)
+            pose = np.eye(4)
+            pose[:3, :4] = np.column_stack((right, np.cross(back, right), back, center))
+            expected.append(pose)
+        np.testing.assert_allclose(scene.render_poses, expected, atol=5e-7)
+        np.testing.assert_allclose(reloaded.render_poses, scene.render_poses)
+
     def test_camera_rays_use_each_camera_matrix(self):
         poses = np.tile(np.eye(4), (2, 1, 1))
         matrices = np.array([[[2, 0, 0], [0, 4, 0], [0, 0, 1]],
@@ -170,8 +209,11 @@ class DatasetLoadingTests(unittest.TestCase):
             self.assertEqual(config['dataset_type'], 'llff')
             self.assertEqual(float(config['near']), 0)
             self.assertEqual(float(config['far']), 1)
-            self.assertEqual(config['dataset_factor'], '4' if name == 'nerf' else '8')
+            self.assertEqual(config['dataset_factor'], '8')
             self.assertEqual(config['white_background'].lower(), 'false')
+        paper = resolve_experiment_config(parse_config('config/config_nerf_fern_paper.txt'))
+        self.assertEqual(paper['dataset_factor'], '4')
+        self.assertEqual(paper['num_importance'], '128')
 
     def test_llff_train_test_and_dataset_free_spiral_for_all_models(self):
         root = self.root / 'fern'
@@ -207,6 +249,9 @@ class DatasetLoadingTests(unittest.TestCase):
                 self.assertEqual(metadata['sampling_bounds'], [0, 1])
                 self.assertEqual(metadata['scene_normalization'], {'center': [0., 0., 0.], 'scale': 1.})
                 self.assertEqual(metadata['splits']['train']['indices'], [1, 3])
+                self.assertEqual(metadata['split_protocol']['val_indices'], [0, 2])
+                self.assertEqual(metadata['split_protocol']['test_indices'], [0, 2])
+                self.assertTrue(metadata['split_protocol']['validation_uses_test_views'])
                 self.assertTrue(all(torch.isfinite(value).all() for value in checkpoint['model_state_dict'].values()))
                 output = self.root / f'{name}_test'
                 with patch('sys.argv', ['eval.py', '--checkpoint', str(checkpoint_path),

@@ -10,7 +10,7 @@ __all__ = ['load_scene', 'SceneData', 'SceneSplit']
 def load_scene(dataset_path, dataset_type='blender', *, factor=1,
                splits=('train', 'val', 'test'), white_background=None,
                llff_holdout=8, llff_bounds_scale=0.75, llff_recenter=True,
-               num_render_poses=80, testskip=1):
+               num_render_poses=None, testskip=1):
     """Load only requested Blender splits, or one LLFF scene with holdout indices.
 
     LLFF supports pre-downsampled images_<factor> or in-memory Pillow resizing.
@@ -20,6 +20,8 @@ def load_scene(dataset_path, dataset_type='blender', *, factor=1,
         raise ValueError('Dataset downsampling factor must be a positive integer')
     if not splits or len(set(splits)) != len(splits) or set(splits) - {'train', 'val', 'test'}:
         raise ValueError('Requested splits must be unique train, val, or test names')
+    if num_render_poses is None:
+        num_render_poses = 120 if dataset_type == 'llff' else 80
     options = dict(factor=factor, splits=splits, num_render_poses=num_render_poses)
     if dataset_type == 'blender':
         return load_blender_scene(dataset_path, **options, testskip=testskip,

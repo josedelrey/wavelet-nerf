@@ -12,6 +12,9 @@ experiment_name = siren            # Name of this experiment's log subfolder
 # Dataset Parameters
 # --------------------
 dataset_path = ./datasets/lego     # Directory containing the dataset
+dataset_type = blender            # OpenGL camera poses; world-space geometry rays
+dataset_factor = 1                # Full resolution; splits come from their JSON files
+white_background = true
 scene_center = 0.0, 0.0, 0.0       # World-space center of the scene cube
 scene_scale = 2.0                  # Cube half-extent; model coordinates = (xyz - center) / scale
 
@@ -33,7 +36,7 @@ far = 6.0                          # Far bound for ray sampling
 # --------------------
 # Model Saving Parameters
 # --------------------
-save_root = ./models               # Directory to save trained models
+save_path = ./models               # Directory to save trained models
 save_interval = 5000               # Interval (in iterations) for saving model checkpoints
 
 # --------------------
@@ -58,6 +61,8 @@ first_step_render = false          # First step validation render flag
 # Evaluation Render Parameters
 # --------------------
 num_render_poses = 80              # Number of frames of the evaluation video
+render_orbit_elevation = -30       # Degrees; orbit is centered at the source-world origin
+render_orbit_radius = 4            # World-space camera distance
 num_samples_eval = 256             # Number of samples per ray for evaluation
 
 # --------------------
