@@ -20,16 +20,16 @@ from modules.rendering import render_nerf
 
 class ReferenceNeRFTests(unittest.TestCase):
     def test_published_blender_and_llff_defaults_are_distinct(self):
-        blender = resolve_experiment_config({}, training=True)
-        fern = resolve_experiment_config({'dataset_type': 'llff'}, training=True)
-        self.assertEqual((blender['num_samples'], blender['num_importance']), ('64', '128'))
+        blender = resolve_experiment_config({'experiment_name': 'blender'}, training=True)
+        fern = resolve_experiment_config({'dataset_type': 'llff', 'experiment_name': 'fern'}, training=True)
+        self.assertEqual((blender['num_samples'], blender['num_importance']), (64, 128))
         self.assertEqual((blender['num_random_rays'], blender['num_iters'], blender['lr_decay']),
-                         ('1024', '500000', '500.0'))
+                         (1024, 500000, 500.))
         self.assertEqual((fern['dataset_factor'], fern['num_random_rays'], fern['num_iters'], fern['lr_decay']),
-                         ('4', '4096', '200000', '250.0'))
-        self.assertEqual(fern['raw_noise_std'], '1.0')
-        self.assertEqual(fern['no_batching'], 'False')
-        self.assertEqual(fern['white_background'], 'False')
+                         (4, 4096, 200000, 250.))
+        self.assertEqual(fern['raw_noise_std'], 1.)
+        self.assertEqual(fern['no_batching'], False)
+        self.assertEqual(fern['white_background'], False)
 
     def test_blender_half_resolution_averages_float_rgba_before_compositing(self):
         rgba = np.array([[[255, 0, 0, 255], [0, 255, 0, 0]],
@@ -233,7 +233,7 @@ class ReferenceNeRFTests(unittest.TestCase):
 
     def test_legacy_checkpoint_is_detected_and_cannot_be_converted(self):
         checkpoint = {'model_type': 'nerf', 'model_state_dict': LegacyNeRF(hidden_dim=8).state_dict(),
-                      'experiment': {'config': {'model_type': 'nerf', 'hidden_dim': '8'}}}
+                      'experiment': {'config': {'model_type': 'nerf', 'hidden_dim': 8}}}
         self.assertEqual(resolve_experiment_config({}, checkpoint)['baseline_version'], 'legacy')
         with self.assertRaises(ValueError):
             resolve_experiment_config({'baseline_version': 'reference'}, checkpoint)

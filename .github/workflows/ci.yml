@@ -23,7 +23,33 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
+      - run: uv run --locked python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
       - run: uv run --locked ruff check .
       - run: uv run --locked python train.py --help
       - run: uv run --locked python eval.py --help
       - run: uv run --locked python -m unittest discover -s tests
+
+  minimum-torch:
+    name: Minimum PyTorch on Python 3.12
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv venv
+      - name: Install the minimum PyTorch CPU release with project dependencies
+        run: |
+          echo 'torch==2.4.0' > "$RUNNER_TEMP/minimum-torch.txt"
+          uv pip install -r pyproject.toml --group cpu --group dev --torch-backend cpu \
+            --constraints "$RUNNER_TEMP/minimum-torch.txt"
+      - name: Check the compilation backend used by training and evaluation
+        run: |
+          uv run --no-sync python - <<'PY'
+          import torch
+          model = torch.nn.Linear(3, 2)
+          inputs = torch.ones(2, 3)
+          compiled = torch.compile(model, backend='inductor', mode='reduce-overhead')
+          torch.testing.assert_close(compiled(inputs), model(inputs))
+          PY
+      - run: uv run --no-sync python -m unittest discover -s tests

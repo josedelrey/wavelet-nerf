@@ -15,12 +15,11 @@ def load_configured_scene(config, *, splits=('train', 'val', 'test')):
     scene = load_scene(
         config['dataset_path'], config.get('dataset_type', 'blender'),
         factor=int(config.get('dataset_factor', 1)) *
-               (2 if config.get('half_res', 'false').lower() == 'true' else 1), splits=splits,
-        white_background=str(config.get('white_background',
-                                       'false' if config.get('dataset_type') == 'llff' else 'true')).lower() == 'true',
+               (2 if config.get('half_res', False) else 1), splits=splits,
+        white_background=config.get('white_background', config.get('dataset_type') != 'llff'),
         llff_holdout=int(config.get('llff_holdout', 8)),
         llff_bounds_scale=float(config.get('llff_bounds_scale', 0.75)),
-        llff_recenter=str(config.get('llff_recenter', 'true')).lower() == 'true',
+        llff_recenter=config.get('llff_recenter', True),
         num_render_poses=int(config.get('num_render_poses', 80)),
         testskip=int(config.get('testskip', 1)),
     )
@@ -38,7 +37,7 @@ def resolve_sampling_bounds(config, scene):
             raise ValueError('Reference LLFF NDC requires near = 0 and far = 1')
     elif not np.isfinite([near, far]).all() or not 0 < near < far:
         raise ValueError('Sampling bounds must satisfy finite 0 < near < far')
-    config.update(near=str(near), far=str(far))
+    config.update(near=near, far=far)
     return near, far
 
 

@@ -14,6 +14,9 @@ import subprocess
 import sys
 import tempfile
 
+import numpy as np
+import yaml
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -46,28 +49,30 @@ def main():
     for scene in ('lego', 'fern'):
         for model in ('nerf', 'siren', 'wavelet'):
             case = f'{model}_{scene}'
-            source = repository / 'config' / f'config_{case}.txt'
+            source = repository / 'config' / f'config_{case}.yaml'
             config = parse_config(source)
             # Retain the example's model architecture and scene conventions.
             # Reduce only resolution, work per update, run length and outputs.
-            config.update(dataset_path=str(repository / 'datasets' / scene), dataset_factor=str(args.factor),
-                          half_res='false', experiment_name=case, num_iters='1',
+            config.update(dataset_path=str(repository / 'datasets' / scene), dataset_factor=args.factor,
+                          half_res=False, experiment_name=case, num_iters=1,
                           log_root=str(run / 'logs'), save_path=str(run / 'models'),
-                          num_random_rays='8', num_samples='4', num_samples_eval='4',
-                          chunk_size='128', netchunk='1024', num_importance='4',
-                          num_render_poses='2', val_interval='1', testskip='8',
-                          save_interval='1', log_interval='1')
-            config_path = run / f'{case}.txt'
+                          num_random_rays=8, num_samples=4, num_samples_eval=4,
+                          chunk_size=128,
+                          num_render_poses=2, val_interval=1, testskip=8,
+                          save_interval=1, log_interval=1)
+            if model == 'nerf':
+                config.update(netchunk=1024, num_importance=4)
+            config_path = run / f'{case}.yaml'
 
             def write_config():
-                config_path.write_text('\n'.join(f'{key} = {value}' for key, value in config.items()) + '\n')
+                config_path.write_text(yaml.safe_dump(config, sort_keys=False))
 
             write_config()
             command(case, 'train', ['train.py', '--config', str(config_path)])
             checkpoint = run / 'models' / case / f'{case}_000001.pth'
             if load_checkpoint(checkpoint)['step'] != 1:
                 raise RuntimeError(f'{case}: first checkpoint does not contain one completed update')
-            config['num_iters'] = '2'
+            config['num_iters'] = 2
             write_config()
             command(case, 'resume', ['train.py', '--config', str(config_path), '--resume', str(checkpoint)])
             checkpoint = checkpoint.with_name(f'{case}_000002.pth')
@@ -82,7 +87,6 @@ def main():
                 metadata_path = repository / 'datasets/lego/transforms_test.json'
                 expected = len(json.loads(metadata_path.read_text())['frames'])
             else:
-                import numpy as np
                 metadata_path = repository / 'datasets/fern/poses_bounds.npy'
                 expected = len(range(0, len(np.load(metadata_path)), int(config['llff_holdout'])))
             if metrics['summary']['num_images'] != expected or not all(

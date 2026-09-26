@@ -5,34 +5,7 @@ from tqdm import tqdm
 from torch.nn.modules.utils import consume_prefix_in_state_dict_if_present
 
 from modules.loss import mse_to_psnr
-
-
-def parse_config(config_path: str) -> dict:
-    """
-    Parse a configuration file where each non-empty, non-comment line is of the format:
-        key = value  # optional inline comment
-    Returns a dictionary mapping keys to values.
-    """
-    config = {}
-    with open(config_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-
-            if not line or line.startswith('#'):
-                continue
-
-            line = line.split('#', 1)[0].strip()
-
-            if not line:
-                continue
-
-            if '=' in line:
-                key, value = line.split('=', maxsplit=1)
-                config[key.strip()] = value.strip()
-            else:
-                print(f"Warning: Invalid line in config file: {line}")
-
-    return config
+from modules.configuration import parse_config  # noqa: F401 - retained public import
 
 
 def format_elapsed_time(start_time: datetime.datetime) -> str:

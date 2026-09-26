@@ -32,7 +32,7 @@ class OutputConfigTests(unittest.TestCase):
 
     def test_example_configs_use_canonical_directory_and_distinct_scene_names(self):
         names = []
-        for path in sorted(Path('config').glob('config_*.txt')):
+        for path in sorted(Path('config').glob('config_*.yaml')):
             with self.subTest(config=path.name):
                 config = parse_config(path)
                 self.assertIn('save_path', config)

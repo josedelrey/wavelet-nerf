@@ -45,26 +45,26 @@ class SceneNormalizationTests(unittest.TestCase):
                 SceneNormalization(scale=scale)
 
     def test_new_scene_coordinates_do_not_depend_on_sampling_bounds(self):
-        config = {'scene_center': '1, -2, 3', 'scene_scale': '4', 'near': '2', 'far': '6'}
+        config = {'scene_center': [1.0, -2.0, 3.0], 'scene_scale': 4.0, 'near': 2.0, 'far': 6.0}
         transform = resolve_scene_normalization(config)
-        self.assertEqual(transform, resolve_scene_normalization({**config, 'near': '0', 'far': '100'}))
+        self.assertEqual(transform, resolve_scene_normalization({**config, 'near': 0.0, 'far': 100.0}))
         self.assertEqual(resolve_scene_normalization({}), SceneNormalization())
 
     def test_checkpoint_transform_overrides_config(self):
         expected = SceneNormalization(center=(1, -2, 3), scale=4)
         restored = resolve_scene_normalization(
-            {'scene_center': '99, 99, 99', 'scene_scale': '100'},
+            {'scene_center': [99.0, 99.0, 99.0], 'scene_scale': 100.0},
             {'scene_normalization': expected.to_dict()},
         )
         self.assertEqual(restored, expected)
 
     def test_legacy_checkpoint_mapping_is_preserved_with_warning(self):
         with self.assertWarnsRegex(UserWarning, 'preserving the legacy mapping'):
-            transform = resolve_scene_normalization({'near': '2', 'far': '6'}, {})
+            transform = resolve_scene_normalization({'near': 2.0, 'far': 6.0}, {})
         points = torch.tensor([[0.0, -1.0, 2.0], [3.0, 6.0, 8.0]])
         torch.testing.assert_close(normalize_positions(points, transform), 2 * (points - 2) / 4 - 1)
         with self.assertRaises(ValueError):
-            resolve_scene_normalization({'near': '6', 'far': '2'}, {})
+            resolve_scene_normalization({'near': 6.0, 'far': 2.0}, {})
 
     def test_checkpoint_round_trip_preserves_network_inputs(self):
         model = NeRF(hidden_dim=8)
@@ -128,8 +128,8 @@ class SceneNormalizationTests(unittest.TestCase):
         checkpoint = {'model_type': 'siren', 'model_state_dict': model.state_dict(),
                       'scene_normalization': transform.to_dict()}
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
-            config = {'siren_hidden_dim': '8', 'num_render_poses': '1',
-                      'scene_center': '99, 99, 99', 'scene_scale': '100'}
+            config = {'siren_hidden_dim': 8, 'num_render_poses': 1,
+                      'scene_center': [99.0, 99.0, 99.0], 'scene_scale': 100.0}
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             stack.enter_context(patch('sys.argv', ['eval.py', '--config', 'unused',
                                                   '--checkpoint', 'unused', '--output', directory]))

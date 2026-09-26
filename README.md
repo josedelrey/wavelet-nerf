@@ -28,11 +28,35 @@ Dependencies and project metadata are defined in `pyproject.toml`. The project
 is configured with `package = false`: uv manages its dependencies without
 building or installing this repository as a distribution.
 
-Training and rendering use CUDA when PyTorch detects a compatible NVIDIA GPU,
-and otherwise run on CPU. PyTorch is installed from PyPI using the build for
-your platform; on Linux, this may include CUDA runtime dependencies. GPU use
-still requires a compatible NVIDIA driver. The former Conda environment is
-replaced by the uv setup.
+The default installs CPU-only PyTorch from the official CPU index. For NVIDIA
+CUDA 13.0 on Linux or Windows, select the `cu130` group instead:
+
+```bash
+uv sync --locked --no-group cpu --group cu130
+uv run --locked --no-group cpu --group cu130 python train.py --config config/config_nerf_lego.yaml
+```
+
+Use the same group flags on subsequent `uv run` commands; omitting them selects
+the CPU default again. The two accelerator groups are mutually exclusive and
+both are recorded in `uv.lock`. Other dependencies come from PyPI. CUDA requires
+a compatible NVIDIA driver; CUDA builds are unavailable on macOS. Training and
+rendering use CUDA when PyTorch detects an available GPU, otherwise CPU.
+
+Check the installed build and whether CUDA is usable:
+
+```bash
+uv run --locked python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+```
+
+For the CUDA install, add `--no-group cpu --group cu130` to that command too.
+Checkpoints record the full PyTorch build, CUDA runtime, execution device, OS,
+GPU names, memory and compute capabilities, and NVIDIA driver version when
+available. An unavailable driver version is stored as `null`.
+
+The locked CPU install and test suite were verified on 2026-09-27 with
+PyTorch `2.14.0+cpu`, Python 3.12.3 and Linux x86-64 on an Intel i7-13700HX.
+The CUDA install selection resolves to `2.14.0+cu130`; GPU execution remains
+unverified because the verification environment cannot access the NVIDIA driver.
 
 ## How To Run?
 
@@ -50,43 +74,72 @@ to the script's location. Existing scene paths are preserved, and rerunning the
 script downloads only when a scene is missing. Failed downloads, extraction,
 or archive validation stop the script and remove its temporary files.
 
-Choose `dataset_type = blender` for NeRF Synthetic scenes such as Lego, or
-`dataset_type = llff` for forward-facing LLFF scenes such as Fern. Both formats
+Choose `dataset_type: blender` for NeRF Synthetic scenes such as Lego, or
+`dataset_type: llff` for forward-facing LLFF scenes such as Fern. Both formats
 work with NeRF, SIREN and WaveletNeRF.
+
+Configuration files use a flat YAML mapping. Start with an example in `config/`,
+or use a minimal training config such as:
+
+```yaml
+experiment_name: nerf_lego_custom
+model_type: nerf
+dataset_type: blender
+dataset_path: ./datasets/lego
+learning_rate: 5e-4
+num_random_rays: 1024
+white_background: true
+scene_center: [0, 0, 0]
+scene_scale: 1
+```
+
+Omitted settings receive model/dataset defaults. Training requires a nonempty
+`experiment_name`; evaluation override files can contain only the fields being
+changed. Numbers and booleans must be native YAML values, not quoted strings.
+Use `true`/`false` for all boolean fields and a three-number list for
+`scene_center`. Unknown keys, duplicate keys, malformed YAML, unsupported model
+options, invalid ranges and inconsistent bounds fail before data loading or
+output creation. Both commands use the same model factory and accept the legacy
+`multiscalewavelet` alias as `wavelet`.
+
+Old `key = value` text config files are no longer accepted. Migrate their entries
+to `key: value` in a `.yaml` or `.yml` file, keeping existing experiment settings
+when resuming. Old checkpoint configs stored as strings are converted to native
+types automatically. New checkpoints store the resolved typed configuration.
 
 Train the **baseline NeRF** on `lego`:
 
 ```
-uv run --locked python train.py --config config/config_nerf_lego.txt
+uv run --locked python train.py --config config/config_nerf_lego.yaml
 ```
 
 Train the **SIREN-NeRF** on `lego`:
 
 ```
-uv run --locked python train.py --config config/config_siren_lego.txt
+uv run --locked python train.py --config config/config_siren_lego.yaml
 ```
 
 Train the **MFN (WaveletNet) NeRF** on `lego`:
 
 ```
-uv run --locked python train.py --config config/config_wavelet_lego.txt
+uv run --locked python train.py --config config/config_wavelet_lego.yaml
 ```
 
 Train on **Fern** using one of the corresponding configs:
 
 ```bash
-uv run --locked python train.py --config config/config_nerf_fern.txt
-uv run --locked python train.py --config config/config_siren_fern.txt
-uv run --locked python train.py --config config/config_wavelet_fern.txt
+uv run --locked python train.py --config config/config_nerf_fern.yaml
+uv run --locked python train.py --config config/config_siren_fern.yaml
+uv run --locked python train.py --config config/config_wavelet_fern.yaml
 ```
 
 LLFF scenes require `poses_bounds.npy` and RGB images in `images/`, or an
 existing `images_<dataset_factor>/` directory. Image filenames are sorted
-lexicographically to match the pose rows. `config_nerf_fern.txt` follows the
+lexicographically to match the pose rows. `config_nerf_fern.yaml` follows the
 [original factor-8 Fern quick start](https://github.com/bmild/nerf/blob/master/config_fern.txt),
 including 1,024 rays and 64 additional fine samples. Its explicit training budget
 is 200,000 updates. The SIREN and wavelet configs also use factor 8. To select
-the factor-4 paper settings, use `config/config_nerf_fern_paper.txt`; it has its
+the factor-4 paper settings, use `config/config_nerf_fern_paper.yaml`; it has its
 own experiment name and retains 4,096 rays and 128 additional fine samples.
 Cached images are used at their existing resolution, otherwise Pillow
 resizes originals in memory. Loading does not write dataset files or require
@@ -94,8 +147,8 @@ ImageMagick. Focal lengths are adjusted to the actual resized dimensions.
 
 The loader converts LLFF camera axes, scales translations and depth bounds by
 `1 / (minimum_bound * llff_bounds_scale)`, and recenters the average camera when
-`llff_recenter = true`. The Fern configs use `llff_bounds_scale = 0.75` and
-`llff_holdout = 8`: every eighth view starting at index zero is held out, with
+`llff_recenter: true`. The Fern configs use `llff_bounds_scale: 0.75` and
+`llff_holdout: 8`: every eighth view starting at index zero is held out, with
 the remaining views used for training. Validation and test use the same held-out
 views, following the original LLFF protocol. SIREN and wavelet Fern configs are
 experimental starting settings; their benchmark quality has not been verified.
@@ -132,7 +185,7 @@ Model checkpoints are saved in:
 ```
 
 `save_path` sets the checkpoint root directory; logs use `log_root`. For example,
-`save_path = ./checkpoints` and `experiment_name = nerf_lego` save weights under
+`save_path: ./checkpoints` and `experiment_name: nerf_lego` save weights under
 `./checkpoints/nerf_lego/`. All example configs use scene-specific experiment
 names. Choose a distinct name for each new experiment to keep its outputs separate.
 Older configs using `save_root` remain supported as an alias for `save_path`.
@@ -144,11 +197,11 @@ Resume training from a checkpoint, using the config for that experiment:
 
 ```bash
 # Lego
-uv run --locked python train.py --config config/config_nerf_lego.txt \
+uv run --locked python train.py --config config/config_nerf_lego.yaml \
   --resume ./models/nerf_lego/nerf_lego_050000.pth
 
 # Fern
-uv run --locked python train.py --config config/config_nerf_fern.txt \
+uv run --locked python train.py --config config/config_nerf_fern.yaml \
   --resume ./models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth
 ```
 
@@ -198,7 +251,7 @@ embedded in checkpoints.
 
 ### Reference NeRF baseline
 
-New `model_type = nerf` runs use `baseline_version = reference`, matching the
+New `model_type: nerf` runs use `baseline_version: reference`, matching the
 [original view-dependent MLP](https://github.com/bmild/nerf/blob/master/run_nerf_helpers.py):
 eight spatial ReLU layers, a skip after layer index 4, separate density and
 256-channel feature projections, and one view-dependent RGB hidden layer.
@@ -227,7 +280,7 @@ matches TensorFlow 1.15 Keras Adam's epsilon-hat placement (`epsilon = 1e-7`).
 The original quick-start Lego config instead used half resolution and 64 fine
 samples; those are different experimental settings.
 
-For `dataset_type = llff`, reference defaults instead follow the
+For `dataset_type: llff`, reference defaults instead follow the
 [published Fern settings](https://github.com/bmild/nerf/blob/master/paper_configs/llff_config.txt):
 factor 4, holdout stride 8, 4,096 rays sampled across training images, 64 coarse
 plus 128 fine samples, density noise standard deviation 1 during training,
@@ -248,7 +301,7 @@ Forward-facing LLFF scenes use the
 The loader scales and recenters the cameras using LLFF depth metadata. Rays are
 shifted to the projection near plane at `1` and projected into normalized device
 coordinates (NDC). Rendering then samples the projected rays linearly with
-`near = 0` and `far = 1`; these bounds are distinct from the projection plane
+`near: 0` and `far: 1`; these bounds are distinct from the projection plane
 and the original world-space depth bounds.
 
 Projected geometry directions retain their magnitude. Both renderers multiply
@@ -256,7 +309,7 @@ sample intervals by that magnitude during volume integration, and the appearance
 head receives the original unit world-space viewing directions. Training uses
 independent midpoint-bin jitter for each ray; validation and evaluation use
 deterministic samples. NDC positions pass to every model without an additional
-scene transform (`scene_center = 0, 0, 0`, `scene_scale = 1`). LLFF configurations
+scene transform (`scene_center: [0, 0, 0]`, `scene_scale: 1`). LLFF configurations
 reject incompatible ray bounds, inverse-depth sampling and white backgrounds.
 Lego's `2–6` bounds and scene scale must not be carried over to Fern.
 
@@ -267,7 +320,7 @@ not converted into NDC weights.
 ### More Datasets
 
 Scene coordinates are configured independently of ray sampling bounds. Set
-`scene_center = x, y, z` and a positive `scene_scale` (the half-extent of a
+`scene_center: [x, y, z]` and a positive `scene_scale` (the half-extent of a
 world-space cube). SIREN, Wavelet and legacy NeRF networks receive
 `(position - scene_center) / scene_scale`. The SIREN and Wavelet Lego configs use
 center `(0, 0, 0)` and scale `2`, mapping the cube
@@ -308,13 +361,13 @@ To train on a different dataset, edit the `dataset_path` parameter in the config
 For example, to train on **chair**, set:
 
 ```
-dataset_path = ./datasets/chair
+dataset_path: ./datasets/chair
 ```
 
 Then run:
 
 ```
-uv run --locked python train.py --config config/config_nerf_lego.txt
+uv run --locked python train.py --config config/config_nerf_lego.yaml
 ```
 
 This example uses the existing baseline config after changing its dataset path.
@@ -338,7 +391,7 @@ uv run --locked python eval.py --mode test \
 ```
 
 New checkpoints restore their model settings automatically. For legacy checkpoints,
-also supply `--config config/config_nerf_lego.txt`. Test evaluation requires the
+also supply `--config config/config_nerf_lego.yaml`. Test evaluation requires the
 dataset images; `--dataset-path` can relocate the dataset without changing model
 settings. Blender test frames follow JSON order; LLFF test frames follow the
 sorted image order and configured holdout interval. All use their actual poses,
@@ -352,7 +405,7 @@ settings. `mean_psnr_db` is the arithmetic mean of per-image PSNR; `pooled_psnr_
 is PSNR computed from the pixel-weighted mean squared error across all images.
 These are different statistics. PSNR uses a peak value of 1, full RGB images,
 float64 squared-error accumulation, no mask/crop and no linear-light conversion.
-Blender RGBA targets are composited over white when `white_background = true`;
+Blender RGBA targets are composited over white when `white_background: true`;
 otherwise the stored RGB channels are retained, following the reference Blender
 loader. Fern uses black-background rendering with RGB targets. Metrics use float
 predictions before PNG clipping or eight-bit quantization. Exact matches have
@@ -394,7 +447,7 @@ Once you have trained a model, render frames with:
 ```
 uv run --locked python eval.py \
   --mode render \
-  --config config/config_nerf_lego.txt \
+  --config config/config_nerf_lego.yaml \
   --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
   --output ./renders/nerf_lego_eval
 ```
@@ -413,6 +466,19 @@ uv run --locked tensorboard --logdir logs
 ```
 
 ## Development
+
+Runtime dependencies cover tensor computation, NumPy/image handling, progress,
+TensorBoard and YAML configuration. Ruff is a development dependency. The former
+Conda-only extras (`torchvision`, `torchaudio`, notebook tools, Matplotlib and
+scikit-learn) and the `mkl<2024.1` pin are not retained.
+
+The PyTorch minimum is 2.4. PyTorch 2.2 CPU failed compilation on Python 3.12
+and could not exchange arrays with the locked NumPy 2.5.3. PyTorch 2.4 CPU was
+tested with Python 3.12.3 and NumPy 2.5.3, including compilation, `weights_only`
+checkpoint loading and the test suite. CI checks this minimum separately from
+the locked environment. Other dependency lower bounds are not a separately
+tested minimum-version combination; use the committed lockfile for reproducible
+runs.
 
 Run the dependency, lint, and command-line checks used in CI:
 

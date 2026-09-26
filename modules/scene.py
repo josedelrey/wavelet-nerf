@@ -31,13 +31,19 @@ class SceneNormalization:
         return {'center': list(self.center), 'scale': self.scale}
 
 
+def _scene_center(config):
+    center = config.get('scene_center', [0., 0., 0.])
+    # Keep this public helper compatible with old checkpoint config dictionaries.
+    return tuple(float(value) for value in (center.split(',') if isinstance(center, str) else center))
+
+
 def resolve_scene_normalization(config, checkpoint=None):
     """Use saved coordinates when restoring, or explicit scene settings for new runs."""
     if config.get('dataset_type') == 'llff':
         transform = (SceneNormalization(**checkpoint['scene_normalization'])
                      if checkpoint is not None and 'scene_normalization' in checkpoint else
                      SceneNormalization(
-                         center=tuple(float(value) for value in config.get('scene_center', '0, 0, 0').split(',')),
+                         center=_scene_center(config),
                          scale=float(config.get('scene_scale', 1.0)),
                      ))
         if transform != SceneNormalization():
@@ -63,5 +69,5 @@ def resolve_scene_normalization(config, checkpoint=None):
         )
         return SceneNormalization(center=((near + far) / 2,) * 3, scale=(far - near) / 2)
 
-    center = tuple(float(value) for value in config.get('scene_center', '0, 0, 0').split(','))
+    center = _scene_center(config)
     return SceneNormalization(center=center, scale=float(config.get('scene_scale', 1.0)))

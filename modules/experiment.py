@@ -7,36 +7,11 @@ import platform
 import subprocess
 import warnings
 
+import torch
 
-_COMMON = {
-    'dataset_path': './datasets/lego', 'seed': 42,
-    'dataset_type': 'blender', 'dataset_factor': 1, 'llff_holdout': 8,
-    'llff_bounds_scale': 0.75, 'llff_recenter': True, 'white_background': True,
-    'near': 2.0, 'far': 6.0, 'num_random_rays': 1024,
-    'num_samples': 256, 'num_samples_eval': 256, 'chunk_size': 8192,
-    'learning_rate': 5e-4, 'lr_decay': 150.0, 'lr_decay_factor': 0.1,
-    'lr_min': 1e-5, 'num_iters': 150000, 'save_interval': 5000,
-    'log_interval': 10, 'val_interval': 1000, 'first_step_render': False,
-    'log_root': './logs', 'save_path': './models', 'num_render_poses': 40,
-}
-_MODEL = {
-    'nerf': {
-        'pos_encoding_dim': 10, 'dir_encoding_dim': 4, 'hidden_dim': 256,
-        'baseline_version': 'reference', 'num_importance': 128, 'netchunk': 65536,
-        'perturb': 1.0, 'lindisp': False, 'raw_noise_std': 0.0,
-        'white_background': True, 'no_batching': True, 'precrop_iters': 0,
-        'precrop_frac': 0.5, 'half_res': False, 'testskip': 8,
-    },
-    'siren': {
-        'num_layers': 8, 'siren_hidden_dim': 256, 'siren_dir_encoding_dim': 4,
-        'sigma_mul': 10.0, 'rgb_mul': 1.0, 'w0': 30.0, 'hidden_w0': 1.0,
-    },
-    'wavelet': {
-        'wave_in_features': 3, 'wave_hidden_dim': 256, 'wave_num_layers': 8,
-        'wave_dir_encoding_dim': 4, 'input_scale': 256.0, 'weight_scale': 1.0,
-        'alpha': 6.0, 'beta': 0.5, 'omega0': 5.0, 'normalized': True,
-    },
-}
+from modules.configuration import (_COMMON, _MODEL, normalize_config, validate_resolved_config)
+
+
 _TRAINING = {'seed', 'num_random_rays', 'num_samples', 'learning_rate',
              'lr_decay', 'lr_decay_factor', 'lr_min'}
 
@@ -59,7 +34,7 @@ def _canonicalize_save_path(config):
 
 def resolve_experiment_config(config, checkpoint=None, *, training=False):
     """Fill defaults, inherit saved settings, and reject explicit incompatible overrides."""
-    config = _canonicalize_save_path(config)
+    config = _canonicalize_save_path(normalize_config(config))
     saved = checkpoint.get('experiment', {}).get('config') if checkpoint else None
     if saved is not None:
         saved = dict(saved)
@@ -67,7 +42,7 @@ def resolve_experiment_config(config, checkpoint=None, *, training=False):
         # resolved save_path. Preserve their recorded destination on restoration.
         if 'save_path' in saved:
             saved.pop('save_root', None)
-        saved = _canonicalize_save_path(saved)
+        saved = _canonicalize_save_path(normalize_config(saved, legacy=True))
     if checkpoint is not None and saved is None:
         warnings.warn('Legacy checkpoint has no experiment metadata; compatibility '
                       'cannot be verified. Supply the original config.', stacklevel=2)
@@ -78,6 +53,12 @@ def resolve_experiment_config(config, checkpoint=None, *, training=False):
     if model_type not in _MODEL:
         raise ValueError(f'Invalid model type: {model_type}')
     model_defaults = dict(_MODEL[model_type])
+    if saved:
+        # Old smoke/config dictionaries sometimes recorded unused options for
+        # other models. They did not affect construction; omit them on restore.
+        model_keys = set().union(*_MODEL.values())
+        saved = {key: value for key, value in saved.items()
+                 if key not in model_keys or key in _MODEL[model_type] or key in _COMMON}
     if model_type == 'nerf':
         # Old checkpoint architecture cannot be converted into two reference MLPs.
         legacy = any(key.startswith('block1.') for key in
@@ -100,7 +81,10 @@ def resolve_experiment_config(config, checkpoint=None, *, training=False):
         if dataset_type == 'llff':
             # Published forward-facing LLFF settings differ from Blender.
             defaults.update(dataset_factor=4, num_random_rays=4096, lr_decay=250.,
-                            raw_noise_std=1., num_iters=200000)
+                            num_importance=128, raw_noise_std=1., num_iters=200000)
+    for name in ('near', 'far'):
+        if config.get(name) == 'auto':
+            config[name] = defaults[name]
     protected = {'model_type', 'dataset_type', 'near', 'far', 'dataset_factor', 'llff_holdout',
                  'llff_bounds_scale', 'llff_recenter', 'white_background', *_MODEL[model_type]}
     if training:
@@ -108,47 +92,18 @@ def resolve_experiment_config(config, checkpoint=None, *, training=False):
     protected.discard('netchunk')  # Query batching changes memory use, not the experiment.
     if saved:
         for key in protected & config.keys():
-            value = config[key]
-            if key == 'model_type':
-                value = str(value).lower()
-                if value == 'multiscalewavelet':
-                    value = 'wavelet'
-                expected = saved[key]
-            else:
-                cast = type(defaults[key])
-                value = (str(value).lower() in ('true', '1', 'yes')
-                         if cast is bool else cast(value))
-                expected = (str(saved.get(key, defaults[key])).lower() in ('true', '1', 'yes')
-                            if cast is bool else cast(saved.get(key, defaults[key])))
-            if value != expected:
-                raise ValueError(f'Checkpoint setting {key!r} is {saved.get(key, defaults.get(key))!r}, '
+            expected = saved.get(key, model_type if key == 'model_type' else defaults.get(key))
+            if config[key] != expected:
+                raise ValueError(f'Checkpoint setting {key!r} is {expected!r}, '
                                  f'but config requests {config[key]!r}')
-    # Keep the existing config-file representation used by the CLI constructors.
-    resolved = {**{key: str(value) for key, value in defaults.items()},
-                **(saved or {}), **config, 'model_type': model_type, 'dataset_type': dataset_type}
-    if dataset_type == 'llff':
-        for name, value in (('near', '0.0'), ('far', '1.0')):
-            if resolved[name] == 'auto':
-                resolved[name] = value
-        if float(resolved['near']) != 0 or float(resolved['far']) != 1:
-            raise ValueError('LLFF NDC sampling requires near = 0 and far = 1')
-        if str(resolved.get('lindisp', 'false')).lower() in ('true', '1', 'yes'):
-            raise ValueError('LLFF NDC uses linear depth sampling, not inverse depth')
-        if str(resolved.get('white_background', 'false')).lower() in ('true', '1', 'yes'):
-            raise ValueError('LLFF reference rendering requires white_background = false')
-    if model_type == 'nerf':
-        version = resolved['baseline_version']
-        if version not in ('reference', 'legacy'):
-            raise ValueError('baseline_version must be reference or legacy')
-        if checkpoint and legacy and version != 'legacy':
-            raise ValueError('Legacy NeRF weights cannot be loaded into the reference coarse/fine baseline; retrain')
-        if version == 'reference' and training and float(resolved['lr_min']) != 0:
-            raise ValueError('Reference NeRF uses exponential decay without an lr_min floor; set lr_min = 0')
-        if version == 'reference':
-            if not 0 < float(resolved['precrop_frac']) <= 1 or int(resolved['precrop_iters']) < 0:
-                raise ValueError('Reference crop needs 0 < precrop_frac <= 1 and precrop_iters >= 0')
-            if float(resolved['raw_noise_std']) < 0 or float(resolved['perturb']) < 0:
-                raise ValueError('Density noise and perturb must be nonnegative')
+    resolved = {**defaults, **(saved or {}), **config,
+                'model_type': model_type, 'dataset_type': dataset_type}
+    for name in ('near', 'far'):
+        if resolved[name] == 'auto':
+            resolved[name] = defaults[name]
+    if model_type == 'nerf' and checkpoint and legacy and resolved['baseline_version'] != 'legacy':
+        raise ValueError('Legacy NeRF weights cannot be loaded into the reference coarse/fine baseline; retrain')
+    resolved = validate_resolved_config(resolved, training=training)
     return resolved
 
 
@@ -172,7 +127,33 @@ def check_dataset(checkpoint, splits):
                          'do not match the loaded dataset')
 
 
-def experiment_metadata(config, splits, scene_normalization, dataset_metadata=None):
+def accelerator_metadata(device=None):
+    """Record the installed build and visible hardware, using plain checkpoint values."""
+    cuda_available = torch.cuda.is_available()
+    gpus = []
+    driver = None
+    if cuda_available:
+        for index in range(torch.cuda.device_count()):
+            properties = torch.cuda.get_device_properties(index)
+            gpus.append({'name': properties.name, 'memory_bytes': properties.total_memory,
+                         'compute_capability': [properties.major, properties.minor]})
+        try:
+            driver = subprocess.check_output(
+                ['nvidia-smi', '--query-gpu=driver_version', '--format=csv,noheader'],
+                text=True, stderr=subprocess.DEVNULL, timeout=2,
+            ).splitlines()[0].strip() or None
+        except (OSError, subprocess.SubprocessError, IndexError):
+            pass
+    return {
+        'torch_build': str(torch.__version__),
+        'cuda_runtime': torch.version.cuda,
+        'device': str(device) if device is not None else ('cuda' if cuda_available else 'cpu'),
+        'gpus': gpus,
+        'nvidia_driver': driver,
+    }
+
+
+def experiment_metadata(config, splits, scene_normalization, dataset_metadata=None, *, device=None):
     root = Path(__file__).resolve().parents[1]
     try:
         revision = subprocess.check_output(
@@ -203,6 +184,9 @@ def experiment_metadata(config, splits, scene_normalization, dataset_metadata=No
         'code': {'revision': revision, 'dirty': dirty},
         'environment': {
             'python': platform.python_version(),
+            'platform': platform.platform(),
+            'machine': platform.machine(),
+            **accelerator_metadata(device),
             'packages': {name: version(name) for name in
                          ('torch', 'numpy', 'Pillow', 'imageio', 'tensorboard', 'tqdm')},
             'uv_lock_sha256': hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None,

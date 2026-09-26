@@ -71,7 +71,7 @@ class EvaluationTests(unittest.TestCase):
             pose[0, 3] = index + 1
             frames.append({'file_path': f'./{index}', 'transform_matrix': pose.tolist()})
         (scene / 'transforms_test.json').write_text(json.dumps({'camera_angle_x': 0.8, 'frames': frames}))
-        config = resolve_experiment_config({'hidden_dim': '8', 'num_samples_eval': '4', 'chunk_size': '2',
+        config = resolve_experiment_config({'hidden_dim': 8, 'num_samples_eval': 4, 'chunk_size': 2,
                                             'dataset_path': 'missing_original_dataset'})
         model = NeRF(hidden_dim=8)
         checkpoint = self.root / 'model.pth'

@@ -33,12 +33,12 @@ class TrainingStepTests(unittest.TestCase):
             'experiment_name': name,
             'log_root': str(self.root / 'logs'),
             save_key: str(checkpoint_root),
-            'num_iters': str(total),
-            'save_interval': '1',
-            'log_interval': '1',
-            'val_interval': '2',
-            'first_step_render': str(first_step_render),
-            'num_random_rays': '1',
+            'num_iters': total,
+            'save_interval': 1,
+            'log_interval': 1,
+            'val_interval': 2,
+            'first_step_render': first_step_render,
+            'num_random_rays': 1,
         }
         config.update(scene_settings or {})
         images = np.zeros((1, 1, 1, 3), dtype=np.float32)
@@ -68,7 +68,7 @@ class TrainingStepTests(unittest.TestCase):
         def cpu_loader(*args, **kwargs):
             return loader(*args, **{**kwargs, 'num_workers': 0})
 
-        argv = ['train.py', '--config', 'unused.txt']
+        argv = ['train.py', '--config', 'unused.yaml']
         if resume is not None:
             argv += ['--resume', str(resume)]
         with contextlib.ExitStack() as stack:
@@ -77,8 +77,7 @@ class TrainingStepTests(unittest.TestCase):
             stack.enter_context(patch.object(train.torch.cuda, 'is_available', return_value=False))
             stack.enter_context(patch.object(train, 'parse_config', return_value=config))
             stack.enter_context(patch.object(train, 'load_configured_scene', return_value=scene))
-            stack.enter_context(patch.object(train, 'NeRF', TinyModel))
-            stack.enter_context(patch.object(train, 'Siren', TinyModel))
+            stack.enter_context(patch.object(train, 'create_model', side_effect=lambda config: TinyModel()))
             stack.enter_context(patch.object(train, 'DataLoader', cpu_loader))
             stack.enter_context(patch.object(train, 'render_nerf', render))
             writer_factory = stack.enter_context(patch.object(train, 'SummaryWriter'))
@@ -97,7 +96,7 @@ class TrainingStepTests(unittest.TestCase):
         checkpoint = torch.load(path, map_location='cpu', weights_only=True)
         self.assertEqual(checkpoint['format_version'], 2)
         experiment = checkpoint['experiment']
-        self.assertEqual(experiment['config']['seed'], '42')
+        self.assertEqual(experiment['config']['seed'], 42)
         self.assertEqual(experiment['dataset']['scene_normalization'],
                          checkpoint['scene_normalization'])
         self.assertEqual(experiment['dataset']['splits']['train']['indices'], [0])
@@ -149,7 +148,7 @@ class TrainingStepTests(unittest.TestCase):
         expected = {'center': [1.0, -2.0, 3.0], 'scale': 4.0}
         original = self.run_training(
             'scene', 2, first_step_render=True,
-            scene_settings={'model_type': 'siren', 'scene_center': '1, -2, 3', 'scene_scale': '4'},
+            scene_settings={'model_type': 'siren', 'scene_center': [1.0, -2.0, 3.0], 'scene_scale': 4.0},
         )
         path = original.folder / 'scene_000002.pth'
         self.assertEqual(self.checkpoint(path, 2)['scene_normalization'], expected)
@@ -157,7 +156,7 @@ class TrainingStepTests(unittest.TestCase):
         self.assertTrue(all(transform == expected for transform in original.scene_transforms))
         resumed = self.run_training(
             'scene_resumed', 4, path,
-            scene_settings={'model_type': 'siren', 'scene_center': '99, 99, 99', 'scene_scale': '100'},
+            scene_settings={'model_type': 'siren', 'scene_center': [99.0, 99.0, 99.0], 'scene_scale': 100.0},
         )
         self.assertTrue(all(transform == expected for transform in resumed.scene_transforms))
         self.assertEqual(

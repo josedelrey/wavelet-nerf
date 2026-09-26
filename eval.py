@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from modules.data import load_configured_scene, camera_rays
 from modules.ndc import ndc_camera_rays
-from modules.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
+from modules.model_factory import create_model
 from modules.rendering import render_nerf
 from modules.scene import SceneNormalization, resolve_scene_normalization
 from modules.utils import load_checkpoint, parse_config
@@ -70,7 +70,7 @@ def main():
         description="Evaluate test views or render a novel-view trajectory."
     )
     parser.add_argument('--config', type=str,
-                        help='Optional overrides; required for legacy checkpoints')
+                        help='YAML overrides; required for legacy checkpoints')
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Path to model checkpoint')
     parser.add_argument('--output', type=str, default='rendered_frames',
@@ -101,7 +101,6 @@ def main():
     reference_baseline = model_type == 'nerf' and config['baseline_version'] == 'reference'
     model_path = args.checkpoint
     output_dir = args.output
-    os.makedirs(output_dir, exist_ok=True)
     near = float(config['near'])
     far = float(config['far'])
     scene_normalization = resolve_scene_normalization(config, checkpoint)
@@ -130,64 +129,8 @@ def main():
     print(f"Number of render poses: {num_render_poses}")
     print("=============================================")
 
-    # Load the model with hyperparameters from config
-    if model_type == 'nerf':
-        pos_encoding_dim = int(config['pos_encoding_dim'])
-        dir_encoding_dim = int(config['dir_encoding_dim'])
-        hidden_dim       = int(config['hidden_dim'])
-        constructor = NeRF if reference_baseline else LegacyNeRF
-        options = {'num_importance': int(config['num_importance'])} if reference_baseline else {}
-        model = constructor(
-            pos_encoding_dim=pos_encoding_dim,
-            dir_encoding_dim=dir_encoding_dim,
-            hidden_dim=hidden_dim, **options
-        ).to(device)
+    model = create_model(config).to(device)
 
-    elif model_type == 'siren':
-        num_layers       = int(config['num_layers'])
-        hidden_dim       = int(config['siren_hidden_dim'])
-        dir_encoding_dim = int(config['siren_dir_encoding_dim'])
-        sigma_mul        = float(config['sigma_mul'])
-        rgb_mul          = float(config['rgb_mul'])
-        w0               = float(config['w0'])
-        hidden_w0        = float(config['hidden_w0'])
-        model = Siren(
-            num_layers=num_layers,
-            hidden_dim=hidden_dim,
-            dir_encoding_dim=dir_encoding_dim,
-            sigma_mul=sigma_mul,
-            rgb_mul=rgb_mul,
-            w0=w0,
-            hidden_w0=hidden_w0
-        ).to(device)
-
-    elif model_type in ('multiscalewavelet', 'wavelet'):
-        in_features      = int(config['wave_in_features'])
-        hidden_dim       = int(config['wave_hidden_dim'])
-        num_layers       = int(config['wave_num_layers'])
-        dir_encoding_dim = int(config['wave_dir_encoding_dim'])
-        input_scale      = float(config['input_scale'])
-        weight_scale     = float(config['weight_scale'])
-        alpha            = float(config['alpha'])
-        beta             = float(config['beta'])
-        omega0           = float(config['omega0'])
-        normalized_flag  = config['normalized'].lower() in ['true', '1', 'yes']
-        model = WaveletNeRF(
-            in_features=in_features,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            dir_encoding_dim=dir_encoding_dim,
-            input_scale=input_scale,
-            weight_scale=weight_scale,
-            alpha=alpha,
-            beta=beta,
-            omega0=omega0,
-            normalized=normalized_flag
-        ).to(device)
-
-    else:
-        raise ValueError(f"Invalid model type: {model_type}")
-    
     # Load the model checkpoint
     model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -199,7 +142,7 @@ def main():
     
     # Test views use loaded cameras. Novel paths can render solely from saved metadata.
     dataset_metadata = checkpoint.get('experiment', {}).get('dataset', {})
-    white_background = config['white_background'].lower() == 'true'
+    white_background = config['white_background']
     if args.mode == 'test':
         scene = load_configured_scene({**config, 'testskip': '1'}, splits=('test',))
         split = scene.split('test')
@@ -232,6 +175,8 @@ def main():
         path_settings = scene.render_path
     if args.mode == 'render':
         render_poses = render_camera_path(configured_render_path(path_settings, config), num_render_poses)
+
+    os.makedirs(output_dir, exist_ok=True)
 
     # Initialize tqdm for the rendering loop
     render_loop = tqdm(
@@ -275,7 +220,7 @@ def main():
                 scene_normalization=scene_normalization,
                 **view_options,
                 **({'num_importance': int(config['num_importance']), 'netchunk': int(config['netchunk']),
-                    'lindisp': config['lindisp'].lower() == 'true'} if reference_baseline else {})
+                    'lindisp': config['lindisp']} if reference_baseline else {})
             )
         
         # Reshape to image

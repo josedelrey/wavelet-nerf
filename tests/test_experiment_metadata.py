@@ -2,6 +2,7 @@ import contextlib
 import io
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -10,7 +11,7 @@ import torch
 
 import eval as evaluate
 from modules.experiment import (check_dataset, describe_split, experiment_metadata,
-                                resolve_experiment_config)
+                                resolve_experiment_config, accelerator_metadata)
 from modules.models import NeRF, Siren, WaveletNeRF
 from modules.scene import SceneNormalization
 from modules.utils import load_checkpoint, save_checkpoint
@@ -41,20 +42,20 @@ class ExperimentMetadataTests(unittest.TestCase):
         # Frequencies have identical weight shapes: output equality detects
         # restoring weights with the wrong non-parameter model settings.
         cases = [
-            ('nerf', {'hidden_dim': '8', 'pos_encoding_dim': '2', 'dir_encoding_dim': '1'},
+            ('nerf', {'hidden_dim': 8, 'pos_encoding_dim': 2, 'dir_encoding_dim': 1},
              NeRF(hidden_dim=8, pos_encoding_dim=2, dir_encoding_dim=1)),
-            ('siren', {'siren_hidden_dim': '8', 'num_layers': '2', 'w0': '7',
-                       'hidden_w0': '3', 'sigma_mul': '2', 'rgb_mul': '4'},
+            ('siren', {'siren_hidden_dim': 8, 'num_layers': 2, 'w0': 7.0,
+                       'hidden_w0': 3.0, 'sigma_mul': 2.0, 'rgb_mul': 4.0},
              Siren(hidden_dim=8, num_layers=2, w0=7, hidden_w0=3, sigma_mul=2, rgb_mul=4)),
-            ('wavelet', {'wave_hidden_dim': '8', 'wave_num_layers': '2', 'omega0': '11',
-                         'input_scale': '2', 'normalized': 'false'},
+            ('wavelet', {'wave_hidden_dim': 8, 'wave_num_layers': 2, 'omega0': 11.0,
+                         'input_scale': 2.0, 'normalized': False},
              WaveletNeRF(hidden_dim=8, num_layers=2, omega0=11, input_scale=2, normalized=False)),
         ]
         positions, directions = torch.randn(4, 3), torch.randn(4, 3)
         for name, settings, original in cases:
             with self.subTest(model=name):
                 original.eval()
-                path = self.save(name, {**settings, 'num_render_poses': '1'}, original)
+                path = self.save(name, {**settings, 'num_render_poses': 1}, original)
                 checkpoint = load_checkpoint(path)
                 self.assertEqual(checkpoint['format_version'], 2)
                 metadata = checkpoint['experiment']
@@ -85,16 +86,16 @@ class ExperimentMetadataTests(unittest.TestCase):
                 self.assertTrue((self.root / name / 'frame_0000.png').exists())
 
     def test_conflicting_settings_fail_and_runtime_overrides_work(self):
-        config = resolve_experiment_config({'model_type': 'wavelet', 'omega0': '11'})
+        config = resolve_experiment_config({'model_type': 'wavelet', 'omega0': 11.0, 'experiment_name': 'test'})
         checkpoint = {'experiment': {'config': config}}
-        for key, value in [('omega0', '5'), ('normalized', 'false'), ('near', '1'),
-                           ('model_type', 'siren'), ('learning_rate', '0.1'), ('seed', '7')]:
+        for key, value in [('omega0', 5), ('normalized', False), ('near', 1),
+                           ('model_type', 'siren'), ('learning_rate', .1), ('seed', 7)]:
             with self.subTest(key=key), self.assertRaisesRegex(ValueError, key):
                 resolve_experiment_config({key: value}, checkpoint, training=True)
-        restored = resolve_experiment_config({'omega0': '11.0', 'num_iters': '200000',
-                                               'num_samples_eval': '16'}, checkpoint, training=True)
-        self.assertEqual(restored['num_samples_eval'], '16')
-        self.assertEqual(restored['wave_hidden_dim'], '256')
+        restored = resolve_experiment_config({'omega0': 11.0, 'num_iters': 200000,
+                                               'num_samples_eval': 16}, checkpoint, training=True)
+        self.assertEqual(restored['num_samples_eval'], 16)
+        self.assertEqual(restored['wave_hidden_dim'], 256)
 
     def test_changed_dataset_is_rejected(self):
         checkpoint = {'experiment': {'dataset': {'splits': self.splits}}}
@@ -103,10 +104,42 @@ class ExperimentMetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'dataset'):
             check_dataset(checkpoint, altered)
 
+    def test_cpu_metadata_keeps_build_suffix_and_plain_checkpoint_values(self):
+        with patch('torch.cuda.is_available', return_value=False):
+            metadata = experiment_metadata({}, self.splits, SceneNormalization(), device='cpu')
+        environment = metadata['environment']
+        self.assertEqual(environment['torch_build'], str(torch.__version__))
+        self.assertIs(type(environment['torch_build']), str)
+        self.assertEqual(environment['cuda_runtime'], torch.version.cuda)
+        self.assertEqual(environment['device'], 'cpu')
+        self.assertEqual(environment['gpus'], [])
+        self.assertIsNone(environment['nvidia_driver'])
+        path = self.root / 'environment.pth'
+        torch.save(environment, path)
+        self.assertEqual(torch.load(path, weights_only=True), environment)
+
+    def test_cuda_metadata_records_visible_devices_and_driver(self):
+        properties = SimpleNamespace(name='Test GPU', total_memory=8192, major=8, minor=6)
+        with patch('torch.cuda.is_available', return_value=True), \
+             patch('torch.cuda.device_count', return_value=1), \
+             patch('torch.cuda.get_device_properties', return_value=properties), \
+             patch('modules.experiment.subprocess.check_output', return_value='580.00\n'):
+            metadata = accelerator_metadata(torch.device('cuda:0'))
+        self.assertEqual(metadata['device'], 'cuda:0')
+        self.assertEqual(metadata['nvidia_driver'], '580.00')
+        self.assertEqual(metadata['gpus'], [{'name': 'Test GPU', 'memory_bytes': 8192,
+                                            'compute_capability': [8, 6]}])
+
+    def test_missing_driver_utility_does_not_prevent_checkpoint_metadata(self):
+        with patch('torch.cuda.is_available', return_value=True), \
+             patch('torch.cuda.device_count', return_value=0), \
+             patch('modules.experiment.subprocess.check_output', side_effect=FileNotFoundError):
+            self.assertIsNone(accelerator_metadata()['nvidia_driver'])
+
     def test_legacy_warning_and_unknown_format(self):
         with self.assertWarnsRegex(UserWarning, 'Legacy checkpoint'):
-            config = resolve_experiment_config({'w0': '7'}, {'model_type': 'siren'})
-        self.assertEqual(config['w0'], '7')
+            config = resolve_experiment_config({'w0': 7.0}, {'model_type': 'siren'})
+        self.assertEqual(config['w0'], 7.)
         for payload in ({'format_version': 99}, {'format_version': 2}):
             path = self.root / 'invalid.pth'
             torch.save(payload, path)

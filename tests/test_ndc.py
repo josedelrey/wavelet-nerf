@@ -130,15 +130,15 @@ class NDCTests(unittest.TestCase):
                 self.assertEqual((float(config['near']), float(config['far'])), (0, 1))
                 self.assertEqual(resolve_scene_normalization(config).scale, 1)
                 if model_type == 'nerf':
-                    self.assertEqual(int(config['num_importance']), 64)
+                    self.assertEqual(int(config['num_importance']), 128)
                     self.assertEqual(float(config['raw_noise_std']), 1)
-                    self.assertEqual(config['no_batching'].lower(), 'false')
-                for settings in ({'near': '2', 'far': '6'}, {'lindisp': 'true'},
-                                 {'white_background': 'true'}):
+                    self.assertEqual(config['no_batching'], False)
+                for settings in ({'near': 2.0, 'far': 6.0}, {'lindisp': True},
+                                 {'white_background': True}):
                     with self.assertRaises(ValueError):
                         resolve_experiment_config({'dataset_type': 'llff', 'model_type': model_type, **settings})
                 with self.assertRaises(ValueError):
-                    resolve_scene_normalization({**config, 'scene_scale': '2'})
+                    resolve_scene_normalization({**config, 'scene_scale': 2.0})
 
     def test_invalid_projection_is_rejected(self):
         origins = np.zeros((1, 3))

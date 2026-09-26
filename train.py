@@ -11,8 +11,7 @@ from tqdm import tqdm
 
 from modules.data import load_configured_scene, resolve_sampling_bounds, compute_rays, RayDataset
 from modules.ndc import compute_ndc_rays
-from modules.models import NeRF, LegacyNeRF, Siren
-from modules.models import WaveletNeRF
+from modules.model_factory import create_model, model_hyperparameters
 from modules.rendering import render_nerf
 from modules.scene import SceneNormalization, resolve_scene_normalization
 from modules.nerf_reference import KerasAdam
@@ -33,7 +32,7 @@ def main():
         description="Train NeRF on a given dataset using volumetric rendering."
     )
     parser.add_argument('--config', type=str, required=True,
-                        help='Path to configuration file')
+                        help='Path to a validated YAML configuration file')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to a checkpoint file to resume training from')
     args = parser.parse_args()
@@ -86,7 +85,7 @@ def main():
     lr_min = float(config['lr_min'])
 
     # First step render flag
-    first_step_render = config['first_step_render'].lower() == 'true'
+    first_step_render = config['first_step_render']
 
     # Resume training from checkpoint if specified
     if args.resume is not None:
@@ -113,68 +112,10 @@ def main():
     reference_baseline = model_type == 'nerf' and config['baseline_version'] == 'reference'
     if reference_baseline:
         scene_normalization = SceneNormalization()
-    config['scene_center'] = ', '.join(map(str, scene_normalization.center))
-    config['scene_scale'] = str(scene_normalization.scale)
+    config['scene_center'] = list(scene_normalization.center)
+    config['scene_scale'] = scene_normalization.scale
 
-    # Depending on model type, pull out hyperparameters
-    if model_type == 'nerf':
-        pos_encoding_dim = int(config['pos_encoding_dim'])
-        dir_encoding_dim = int(config['dir_encoding_dim'])
-        hidden_dim     = int(config['hidden_dim'])
-        constructor = NeRF if reference_baseline else LegacyNeRF
-        options = {'num_importance': int(config['num_importance'])} if reference_baseline else {}
-        model = constructor(
-            pos_encoding_dim=pos_encoding_dim,
-            dir_encoding_dim=dir_encoding_dim,
-            hidden_dim=hidden_dim, **options
-        ).to(device)
-
-    elif model_type == 'siren':
-        num_layers            = int(config['num_layers'])
-        hidden_dim            = int(config['siren_hidden_dim'])
-        dir_encoding_dim      = int(config['siren_dir_encoding_dim'])
-        sigma_mul             = float(config['sigma_mul'])
-        rgb_mul               = float(config['rgb_mul'])
-        w0                    = float(config['w0'])
-        hidden_w0             = float(config['hidden_w0'])
-
-        model = Siren(
-            num_layers=num_layers,
-            hidden_dim=hidden_dim,
-            dir_encoding_dim=dir_encoding_dim,
-            sigma_mul=sigma_mul,
-            rgb_mul=rgb_mul,
-            w0=w0,
-            hidden_w0=hidden_w0
-        ).to(device)
-
-    elif model_type == 'wavelet':
-        in_features        = int(config['wave_in_features'])
-        hidden_dim         = int(config['wave_hidden_dim'])
-        num_layers         = int(config['wave_num_layers'])
-        dir_encoding_dim   = int(config['wave_dir_encoding_dim'])
-        input_scale        = float(config['input_scale'])
-        weight_scale       = float(config['weight_scale'])
-        alpha              = float(config['alpha'])
-        beta               = float(config['beta'])
-        omega0             = float(config['omega0'])
-        normalized_flag    = config['normalized'].lower() in ['true', '1', 'yes']
-
-        model = WaveletNeRF(
-            in_features=in_features,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            dir_encoding_dim=dir_encoding_dim,
-            input_scale=input_scale,
-            weight_scale=weight_scale,
-            alpha=alpha,
-            beta=beta,
-            omega0=omega0,
-            normalized=normalized_flag
-        ).to(device)
-
-    else:
-        raise ValueError(f"Invalid model type: {model_type}")
+    model = create_model(config).to(device)
 
     # Monitoring parameters
     log_interval = int(config['log_interval'])
@@ -204,31 +145,8 @@ def main():
     print("\n========== Model Hyperparameters ==========")
     print(f"Model type: {model_type}")
 
-    if model_type == 'nerf':
-        print(f"pos_encoding_dim: {pos_encoding_dim}")
-        print(f"dir_encoding_dim: {dir_encoding_dim}")
-        print(f"hidden_dim: {hidden_dim}")
-
-    elif model_type == 'siren':
-        print(f"num_layers: {num_layers}")
-        print(f"siren_hidden_dim: {hidden_dim}")
-        print(f"siren_dir_encoding_dim: {dir_encoding_dim}")
-        print(f"sigma_mul: {sigma_mul}")
-        print(f"rgb_mul: {rgb_mul}")
-        print(f"w0: {w0}")
-        print(f"hidden_w0: {hidden_w0}")
-
-    elif model_type == 'wavelet':
-        print(f"wave_in_features: {in_features}")
-        print(f"wave_hidden_dim: {hidden_dim}")
-        print(f"wave_num_layers: {num_layers}")
-        print(f"wave_dir_encoding_dim: {dir_encoding_dim}")
-        print(f"input_scale: {input_scale}")
-        print(f"weight_scale: {weight_scale}")
-        print(f"alpha: {alpha}")
-        print(f"beta: {beta}")
-        print(f"omega0: {omega0}")
-        print(f"normalized: {normalized_flag}")
+    for name, value in model_hyperparameters(config).items():
+        print(f"{name}: {value}")
 
     print("===========================================\n")
     
@@ -237,10 +155,10 @@ def main():
     N_val, H_val, W_val, _ = images_val_np.shape
     splits = {name: scene.split(name).describe() for name in ('train', 'val')}
     check_dataset(checkpoint, splits)
-    experiment = experiment_metadata(config, splits, scene_normalization, scene.describe())
+    experiment = experiment_metadata(config, splits, scene_normalization, scene.describe(), device=device)
 
     # Create the dataset and DataLoader
-    per_image_sampling = reference_baseline and config['no_batching'].lower() == 'true'
+    per_image_sampling = reference_baseline and config['no_batching']
     if not per_image_sampling:
         rays = ray_function(images_np, c2w_matrices_np, intrinsics_np, normalize=not reference_baseline)
         dataset = RayDataset(*rays)
@@ -328,7 +246,7 @@ def main():
                 
                 render_options = ({'num_importance': int(config['num_importance']),
                                    'netchunk': int(config['netchunk']), 'perturb': float(config['perturb']),
-                                   'lindisp': config['lindisp'].lower() == 'true',
+                                   'lindisp': config['lindisp'],
                                    'raw_noise_std': float(config['raw_noise_std']), 'return_aux': True}
                                   if reference_baseline else {})
                 if viewdirs_batch is not None:

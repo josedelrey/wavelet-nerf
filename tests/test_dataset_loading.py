@@ -9,6 +9,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 import torch
+import yaml
 
 import eval as evaluation
 import train
@@ -205,15 +206,15 @@ class DatasetLoadingTests(unittest.TestCase):
 
     def test_fern_example_configs_resolve_for_all_models(self):
         for name in ('nerf', 'siren', 'wavelet'):
-            config = resolve_experiment_config(parse_config(f'config/config_{name}_fern.txt'))
+            config = resolve_experiment_config(parse_config(f'config/config_{name}_fern.yaml'))
             self.assertEqual(config['dataset_type'], 'llff')
             self.assertEqual(float(config['near']), 0)
             self.assertEqual(float(config['far']), 1)
-            self.assertEqual(config['dataset_factor'], '8')
-            self.assertEqual(config['white_background'].lower(), 'false')
-        paper = resolve_experiment_config(parse_config('config/config_nerf_fern_paper.txt'))
-        self.assertEqual(paper['dataset_factor'], '4')
-        self.assertEqual(paper['num_importance'], '128')
+            self.assertEqual(config['dataset_factor'], 8)
+            self.assertEqual(config['white_background'], False)
+        paper = resolve_experiment_config(parse_config('config/config_nerf_fern_paper.yaml'))
+        self.assertEqual(paper['dataset_factor'], 4)
+        self.assertEqual(paper['num_importance'], 128)
 
     def test_llff_train_test_and_dataset_free_spiral_for_all_models(self):
         root = self.root / 'fern'
@@ -221,17 +222,18 @@ class DatasetLoadingTests(unittest.TestCase):
         for name in ('nerf', 'siren', 'wavelet'):
             with self.subTest(model=name), contextlib.ExitStack() as stack:
                 config = {
-                    'dataset_path': str(root), 'dataset_type': 'llff', 'dataset_factor': '2',
-                    'llff_holdout': '2', 'model_type': name, 'experiment_name': name,
+                    'dataset_path': str(root), 'dataset_type': 'llff', 'dataset_factor': 2,
+                    'llff_holdout': 2, 'model_type': name, 'experiment_name': name,
                     'log_root': str(self.root / 'logs'), 'save_path': str(self.root / 'models'),
-                    'num_iters': '2', 'num_random_rays': '4', 'num_samples': '4',
-                    'num_samples_eval': '4', 'num_importance': '4', 'chunk_size': '8',
-                    'hidden_dim': '8', 'siren_hidden_dim': '8', 'num_layers': '2',
-                    'wave_hidden_dim': '8', 'wave_num_layers': '2',
-                    'val_interval': '1', 'num_render_poses': '2',
+                    'num_iters': 2, 'num_random_rays': 4, 'num_samples': 4,
+                    'num_samples_eval': 4, 'chunk_size': 8,
+                    'val_interval': 1, 'num_render_poses': 2,
                 }
-                config_path = self.root / f'{name}.txt'
-                config_path.write_text('\n'.join(f'{key} = {value}' for key, value in config.items()))
+                config.update({'nerf': {'hidden_dim': 8, 'num_importance': 4},
+                               'siren': {'siren_hidden_dim': 8, 'num_layers': 2},
+                               'wavelet': {'wave_hidden_dim': 8, 'wave_num_layers': 2}}[name])
+                config_path = self.root / f'{name}.yaml'
+                config_path.write_text(yaml.safe_dump(config, sort_keys=False))
                 loader = train.DataLoader
                 stack.enter_context(patch.object(train, 'DataLoader',
                                                  side_effect=lambda *a, **kw: loader(*a, **{**kw, 'num_workers': 0})))
