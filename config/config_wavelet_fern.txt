@@ -1,0 +1,43 @@
+# Forward-facing LLFF Fern scene; sampling bounds are in NDC
+dataset_type = llff
+dataset_path = ./datasets/fern
+dataset_factor = 8
+llff_holdout = 8
+llff_bounds_scale = 0.75
+llff_recenter = true
+white_background = false
+scene_center = 0, 0, 0
+scene_scale = 1
+near = 0
+far = 1
+
+log_root = ./logs
+save_path = ./models
+num_random_rays = 1024
+chunk_size = 1024
+save_interval = 5000
+log_interval = 100
+val_interval = 10000
+first_step_render = false
+num_render_poses = 120
+
+# Experimental starting settings; no claim of reproduced Fern scores
+model_type = wavelet
+experiment_name = wavelet_fern
+num_iters = 300000
+learning_rate = 5e-4
+lr_decay = 300
+lr_decay_factor = 0.1
+lr_min = 5e-5
+num_samples = 128
+num_samples_eval = 256
+wave_in_features = 3
+wave_hidden_dim = 256
+wave_num_layers = 8
+wave_dir_encoding_dim = 4
+input_scale = 128
+weight_scale = 1
+alpha = 6
+beta = 1
+omega0 = 5
+normalized = true

@@ -729,7 +729,8 @@ material and the SIREN reference implementation used by the model layers.
 NeRF implementation
 Source: https://github.com/bmild/nerf
 Relevant files: modules/models.py, modules/camera.py, modules/encoding.py,
-modules/rendering.py, modules/data.py, and download_dataset.sh
+modules/rendering.py, modules/data.py, modules/ndc.py, modules/nerf_reference.py,
+modules/datasets/llff.py, and download_dataset.sh
 
 MIT License
 

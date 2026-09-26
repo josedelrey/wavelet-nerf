@@ -1,119 +1,86 @@
-import os
-import json
-import numpy as np
-import imageio.v2 as imageio
-import torch
-from torch.utils.data import Dataset
+"""Shared scene loading and ray generation for Blender and LLFF datasets."""
+
 from typing import Tuple
 
+import numpy as np
+import torch
+from torch.utils.data import Dataset
 
-def load_dataset(dataset_path: str,
-                 mode: str = 'train',
-                 single_image: bool = False) -> Tuple[np.ndarray, np.ndarray, float]:
-    """
-    Load images and camera-to-world transformation matrices from the dataset.
-
-    This function reads a JSON file containing camera parameters and frame information,
-    loads each corresponding image, and composites images with an alpha channel over a 
-    white background. It also computes the camera's focal length based on the horizontal
-    field of view.
-
-    Args:
-        dataset_path (str): Base directory of the dataset.
-        mode (str): Dataset split mode ('train', 'val', or 'test').
-
-    Returns:
-        Tuple[np.ndarray, np.ndarray, float]:
-            - images: Array of shape (N, H, W, 3) with normalized RGB images.
-            - c2w_matrices: Array of shape (N, 4, 4) with camera-to-world transformation matrices.
-            - focal_length: Focal length computed from the camera's field of view.
-    """
-    transforms_path = os.path.join(dataset_path, f"transforms_{mode}.json")
-    with open(transforms_path, 'r') as f:
-        meta = json.load(f)
-
-    camera_angle_x = meta["camera_angle_x"]
-    frames = meta["frames"]
-    if not frames:
-        raise ValueError(f"Dataset split '{mode}' contains no frames: {transforms_path}")
-
-    images = []
-    c2w_matrices = []
-    for frame in frames:
-        rel_path = frame["file_path"].lstrip("./")
-        img_path = os.path.join(dataset_path, rel_path + ".png")
-        img = imageio.imread(img_path).astype(np.float32) / 255.0
-        
-        # Composite image with alpha channel over white background
-        if img.shape[-1] == 4:
-            alpha = img[..., 3:4]
-            img = img[..., :3] * alpha + (1.0 - alpha)
-        
-        images.append(img)
-        c2w_matrices.append(np.array(frame["transform_matrix"], dtype=np.float32))
-        
-        if single_image:
-            break
-    
-    images = np.stack(images, axis=0)
-    c2w_matrices = np.stack(c2w_matrices, axis=0)
-    _, _, W, _ = images.shape
-
-    focal_length = 0.5 * W / np.tan(0.5 * camera_angle_x)
-    
-    return images, c2w_matrices, focal_length
+from modules.datasets import load_scene
 
 
-def compute_rays(images: np.ndarray,
-                 c2w_matrices: np.ndarray,
-                 focal_length: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Compute camera ray origins and directions, and extract target pixel colors.
+def load_configured_scene(config, *, splits=('train', 'val', 'test')):
+    return load_scene(
+        config['dataset_path'], config.get('dataset_type', 'blender'),
+        factor=int(config.get('dataset_factor', 1)) *
+               (2 if config.get('half_res', 'false').lower() == 'true' else 1), splits=splits,
+        white_background=str(config.get('white_background',
+                                       'false' if config.get('dataset_type') == 'llff' else 'true')).lower() == 'true',
+        llff_holdout=int(config.get('llff_holdout', 8)),
+        llff_bounds_scale=float(config.get('llff_bounds_scale', 0.75)),
+        llff_recenter=str(config.get('llff_recenter', 'true')).lower() == 'true',
+        num_render_poses=int(config.get('num_render_poses', 80)),
+        testskip=int(config.get('testskip', 1)),
+    )
 
-    This function generates a meshgrid of pixel coordinates, converts these coordinates 
-    into camera space, and applies the camera-to-world rotation and translation to compute 
-    ray origins and normalized ray directions for each pixel. It also flattens the target 
-    pixel colors for subsequent processing.
 
-    Args:
-        images (np.ndarray): Array of shape (N, H, W, 3) with RGB images.
-        c2w_matrices (np.ndarray): Array of shape (N, 4, 4) with camera-to-world matrices.
-        focal_length (float): Focal length derived from the camera intrinsics.
+def resolve_sampling_bounds(config, scene):
+    """Resolve 'auto' once and persist the concrete bounds in the run config."""
+    near, far = (float(default if config.get(name, 'auto') == 'auto' else config[name])
+                 for name, default in zip(('near', 'far'), scene.sampling_bounds))
+    if scene.dataset_type == 'llff':
+        if (near, far) != (0.0, 1.0):
+            raise ValueError('Reference LLFF NDC requires near = 0 and far = 1')
+    elif not np.isfinite([near, far]).all() or not 0 < near < far:
+        raise ValueError('Sampling bounds must satisfy finite 0 < near < far')
+    config.update(near=str(near), far=str(far))
+    return near, far
 
-    Returns:
-        Tuple[np.ndarray, np.ndarray, np.ndarray]:
-            - rays_o: Ray origins with shape (N, H*W, 3).
-            - rays_d: Normalized ray directions with shape (N, H*W, 3).
-            - target_pixels: Flattened RGB pixel colors with shape (N, H*W, 3).
-    """
-    N, H, W, _ = images.shape
 
-    target_pixels = images.reshape(N, -1, 3)
+def load_dataset(dataset_path: str, mode: str = 'train', single_image: bool = False,
+                 *, white_background=True, half_res=False, testskip=1):
+    """Legacy Blender tuple adapter; new callers should use load_scene instead."""
+    split = load_scene(dataset_path, splits=(mode,), num_render_poses=1,
+                       white_background=white_background, factor=2 if half_res else 1,
+                       testskip=testskip).split(mode)
+    selection = slice(0, 1) if single_image else slice(None)
+    return split.images[selection], split.poses[selection], float(split.intrinsics[0, 0, 0])
 
-    u = np.arange(W, dtype=np.float32)
-    v = np.arange(H, dtype=np.float32)
-    u_grid, v_grid = np.meshgrid(u, v, indexing='xy')
 
-    # Convert pixel coordinates to camera space
-    x_cam = u_grid - 0.5 * W
-    y_cam = -(v_grid - 0.5 * H)
-    z_cam = -np.full_like(x_cam, focal_length)
-    directions_cam = np.stack([x_cam, y_cam, z_cam], axis=-1)
+def camera_rays(height, width, c2w_matrices, intrinsics, *, normalize=True):
+    """Generate unit world rays using per-camera pinhole intrinsics (+Y up, -Z forward)."""
+    poses = np.asarray(c2w_matrices, dtype=np.float32)
+    count = len(poses)
+    matrices = np.asarray(intrinsics, dtype=np.float32)
+    if matrices.ndim == 0:
+        focal = float(matrices)
+        matrices = np.array([[focal, 0, width / 2], [0, focal, height / 2], [0, 0, 1]],
+                            dtype=np.float32)
+    if matrices.shape == (3, 3):
+        matrices = np.broadcast_to(matrices, (count, 3, 3))
+    if poses.shape != (count, 4, 4) or matrices.shape != (count, 3, 3):
+        raise ValueError('Rays require N x 4 x 4 poses and N x 3 x 3 intrinsics')
+    if (count == 0 or height < 1 or width < 1 or not np.isfinite(matrices).all()
+            or (matrices[:, (0, 1), (0, 1)] <= 0).any()):
+        raise ValueError('Rays require nonempty images and finite positive focal lengths')
+    u, v = np.meshgrid(np.arange(width, dtype=np.float32),
+                       np.arange(height, dtype=np.float32), indexing='xy')
+    pixels = np.stack((u, v, np.ones_like(u)), axis=-1)
+    camera_directions = np.einsum('nij,hwj->nhwi', np.linalg.inv(matrices), pixels)
+    camera_directions[..., 1:] *= -1
+    directions = np.einsum('nij,nhwj->nhwi', poses[:, :3, :3], camera_directions)
+    if normalize:
+        directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
+    origins = np.broadcast_to(poses[:, None, None, :3, 3], (count, height, width, 3))
+    return origins.reshape(count, -1, 3).copy(), directions.reshape(count, -1, 3)
 
-    R = c2w_matrices[:, :3, :3]
-    t = c2w_matrices[:, :3, 3]
 
-    # Rotate ray directions to world space
-    rays_d = np.einsum('nij,hwj->nhwi', R, directions_cam)
-    rays_d = rays_d / np.linalg.norm(rays_d, axis=-1, keepdims=True)
-
-    # Replicate camera origin for each ray
-    rays_o = np.tile(t[:, None, None, :], (1, H, W, 1))
-
-    rays_o = rays_o.reshape(N, -1, 3)
-    rays_d = rays_d.reshape(N, -1, 3)
-
-    return rays_o, rays_d, target_pixels
+def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray,
+                 focal_length, *, normalize=True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute unit world rays and RGB targets; accept scalar or matrix intrinsics."""
+    count, height, width, _ = images.shape
+    origins, directions = camera_rays(height, width, c2w_matrices, focal_length, normalize=normalize)
+    return origins, directions, images.reshape(count, -1, 3)
 
 
 class RayDataset(Dataset):
@@ -129,13 +96,16 @@ class RayDataset(Dataset):
         rays_d (np.ndarray): Array of ray directions with shape (N, H*W, 3).
         target_pixels (np.ndarray): Array of target RGB pixel colors with shape (N, H*W, 3).
     """
-    def __init__(self, rays_o, rays_d, target_pixels):
+    def __init__(self, rays_o, rays_d, target_pixels, view_directions=None):
         self.rays_o = torch.from_numpy(rays_o.reshape(-1, 3)).float()
         self.rays_d = torch.from_numpy(rays_d.reshape(-1, 3)).float()
         self.target_pixels = torch.from_numpy(target_pixels.reshape(-1, 3)).float()
+        self.view_directions = (torch.from_numpy(view_directions.reshape(-1, 3)).float()
+                                if view_directions is not None else None)
 
     def __len__(self):
         return self.rays_o.shape[0]
 
     def __getitem__(self, idx):
-        return self.rays_o[idx], self.rays_d[idx], self.target_pixels[idx]
+        ray = self.rays_o[idx], self.rays_d[idx], self.target_pixels[idx]
+        return (*ray, self.view_directions[idx]) if self.view_directions is not None else ray

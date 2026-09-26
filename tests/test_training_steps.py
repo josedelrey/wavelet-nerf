@@ -10,6 +10,7 @@ import numpy as np
 import torch
 
 import train
+from modules.datasets import SceneSplit
 
 
 class TinyModel(torch.nn.Module):
@@ -25,7 +26,7 @@ class TrainingStepTests(unittest.TestCase):
         self.root = Path(self.directory.name)
 
     def run_training(self, name, total, resume=None, interrupt_after=None,
-                     first_step_render=False):
+                     first_step_render=False, scene_settings=None):
         config = {
             'experiment_name': name,
             'log_root': str(self.root / 'logs'),
@@ -37,12 +38,21 @@ class TrainingStepTests(unittest.TestCase):
             'first_step_render': str(first_step_render),
             'num_random_rays': '1',
         }
+        config.update(scene_settings or {})
         images = np.zeros((1, 1, 1, 3), dtype=np.float32)
         poses = np.eye(4, dtype=np.float32)[None]
+        split = SceneSplit(images, poses,
+                           np.array([[[1., 0., .5], [0., 1., .5], [0., 0., 1.]]], dtype=np.float32),
+                           np.array([[2., 6.]], dtype=np.float32), np.array([0]), ('./0',))
+        scene = SimpleNamespace(dataset_type='blender', white_background=True,
+                                sampling_bounds=(2., 6.), split=lambda name: split,
+                                describe=lambda: {})
         training_calls = 0
+        scene_transforms = []
 
         def render(model, rays_o, rays_d, *args, **kwargs):
             nonlocal training_calls
+            scene_transforms.append(kwargs['scene_normalization'].to_dict())
             if kwargs.get('stratified', True):
                 if training_calls == interrupt_after:
                     raise KeyboardInterrupt
@@ -64,8 +74,9 @@ class TrainingStepTests(unittest.TestCase):
             stack.enter_context(patch('sys.argv', argv))
             stack.enter_context(patch.object(train.torch.cuda, 'is_available', return_value=False))
             stack.enter_context(patch.object(train, 'parse_config', return_value=config))
-            stack.enter_context(patch.object(train, 'load_dataset', return_value=(images, poses, 1.0)))
+            stack.enter_context(patch.object(train, 'load_configured_scene', return_value=scene))
             stack.enter_context(patch.object(train, 'NeRF', TinyModel))
+            stack.enter_context(patch.object(train, 'Siren', TinyModel))
             stack.enter_context(patch.object(train, 'DataLoader', cpu_loader))
             stack.enter_context(patch.object(train, 'render_nerf', render))
             writer_factory = stack.enter_context(patch.object(train, 'SummaryWriter'))
@@ -77,10 +88,17 @@ class TrainingStepTests(unittest.TestCase):
             writer=writer_factory.return_value,
             writer_kwargs=writer_factory.call_args.kwargs,
             progress=progress.return_value.__enter__.return_value,
+            scene_transforms=scene_transforms,
         )
 
     def checkpoint(self, path, expected):
         checkpoint = torch.load(path, map_location='cpu', weights_only=True)
+        self.assertEqual(checkpoint['format_version'], 2)
+        experiment = checkpoint['experiment']
+        self.assertEqual(experiment['config']['seed'], '42')
+        self.assertEqual(experiment['dataset']['scene_normalization'],
+                         checkpoint['scene_normalization'])
+        self.assertEqual(experiment['dataset']['splits']['train']['indices'], [0])
         self.assertEqual(checkpoint['step'], expected)
         self.assertEqual(checkpoint['step_semantics'], 'completed_updates')
         self.assertEqual(checkpoint['scheduler_state_dict']['last_epoch'], expected)
@@ -108,6 +126,26 @@ class TrainingStepTests(unittest.TestCase):
         self.assertEqual(result.training_calls, 1)
         self.checkpoint(result.folder / 'resumed_000003.pth', 3)
         self.assertEqual(result.writer_kwargs['purge_step'], 3)
+
+    def test_training_validation_and_resume_use_saved_scene_coordinates(self):
+        expected = {'center': [1.0, -2.0, 3.0], 'scale': 4.0}
+        original = self.run_training(
+            'scene', 2, first_step_render=True,
+            scene_settings={'model_type': 'siren', 'scene_center': '1, -2, 3', 'scene_scale': '4'},
+        )
+        path = original.folder / 'scene_000002.pth'
+        self.assertEqual(self.checkpoint(path, 2)['scene_normalization'], expected)
+        self.assertTrue(original.scene_transforms)
+        self.assertTrue(all(transform == expected for transform in original.scene_transforms))
+        resumed = self.run_training(
+            'scene_resumed', 4, path,
+            scene_settings={'model_type': 'siren', 'scene_center': '99, 99, 99', 'scene_scale': '100'},
+        )
+        self.assertTrue(all(transform == expected for transform in resumed.scene_transforms))
+        self.assertEqual(
+            self.checkpoint(resumed.folder / 'scene_resumed_000004.pth', 4)['scene_normalization'],
+            expected,
+        )
 
     def test_legacy_periodic_checkpoint_uses_scheduler_update_count(self):
         original = self.run_training('original', 3)

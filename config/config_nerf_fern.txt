@@ -1,0 +1,43 @@
+# Forward-facing LLFF Fern scene; sampling bounds are in NDC
+dataset_type = llff
+dataset_path = ./datasets/fern
+dataset_factor = 4
+llff_holdout = 8
+llff_bounds_scale = 0.75
+llff_recenter = true
+white_background = false
+scene_center = 0, 0, 0
+scene_scale = 1
+near = 0
+far = 1
+
+log_root = ./logs
+save_path = ./models
+num_random_rays = 4096
+chunk_size = 1024
+save_interval = 5000
+log_interval = 100
+val_interval = 10000
+first_step_render = false
+num_render_poses = 120
+
+# Published settings from bmild/nerf/paper_configs/llff_config.txt
+model_type = nerf
+baseline_version = reference
+experiment_name = nerf_fern
+num_iters = 200000
+learning_rate = 5e-4
+lr_decay = 250
+lr_decay_factor = 0.1
+lr_min = 0
+num_samples = 64
+num_samples_eval = 64
+num_importance = 128
+netchunk = 65536
+perturb = 1
+lindisp = false
+raw_noise_std = 1
+no_batching = false
+pos_encoding_dim = 10
+dir_encoding_dim = 4
+hidden_dim = 256

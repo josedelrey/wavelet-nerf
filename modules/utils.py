@@ -60,13 +60,18 @@ def get_checkpoint_step(checkpoint):
 def load_checkpoint(checkpoint_path):
     """Load on CPU, accepting legacy torch.compile parameter names and metadata."""
     checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=True)
+    if checkpoint.get('format_version', 1) not in (1, 2):
+        raise ValueError(f"Unsupported checkpoint format version: {checkpoint['format_version']}")
+    if checkpoint.get('format_version') == 2 and 'experiment' not in checkpoint:
+        raise ValueError('Checkpoint format 2 requires experiment metadata')
     state_dict = checkpoint['model_state_dict']
     while any(key.startswith('_orig_mod.') for key in state_dict):
         consume_prefix_in_state_dict_if_present(state_dict, '_orig_mod.')
     return checkpoint
 
 
-def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, experiment_name):
+def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, experiment_name,
+                    scene_normalization=None, experiment=None):
     """
     Save a training checkpoint with step equal to completed optimizer updates.
     """
@@ -82,6 +87,11 @@ def save_checkpoint(step, model, optimizer, scheduler, save_path, model_type, ex
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict()
     }
+    if scene_normalization is not None:
+        checkpoint_dict['scene_normalization'] = scene_normalization.to_dict()
+    if experiment is not None:
+        checkpoint_dict['format_version'] = 2
+        checkpoint_dict['experiment'] = experiment
     model_filename = os.path.join(save_path, f"{experiment_name}_{step:06d}.pth")
     torch.save(checkpoint_dict, model_filename)
     return model_filename

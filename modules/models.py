@@ -6,15 +6,82 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from typing import Tuple
 
 from modules.encoding import positional_encoding
 
 
-class NeRF(nn.Module):
+class NeRFMLP(nn.Module):
+    """The bmild/nerf eight-layer MLP, returning RGB logits and raw density.
+
+    Concatenate encoded position *before* features after layer index 4.
+    The reference uses a 256-channel feature projection even when W differs.
     """
-    Standard NeRF model using ReLU activations and positional encoding.
+
+    def __init__(self, pos_encoding_dim=10, dir_encoding_dim=4, hidden_dim=256):
+        super().__init__()
+        if hidden_dim < 2 or pos_encoding_dim < 0 or dir_encoding_dim < 0:
+            raise ValueError('NeRF requires hidden_dim >= 2 and nonnegative encoding dimensions')
+        self.pos_encoding_dim = pos_encoding_dim
+        self.dir_encoding_dim = dir_encoding_dim
+        position_size = 3 + 6 * pos_encoding_dim
+        direction_size = 3 + 6 * dir_encoding_dim
+        self.layers = nn.ModuleList([
+            nn.Linear(position_size if i == 0 else
+                      hidden_dim + position_size if i == 5 else hidden_dim, hidden_dim)
+            for i in range(8)
+        ])
+        self.density = nn.Linear(hidden_dim, 1)
+        self.feature = nn.Linear(hidden_dim, 256)
+        self.view = nn.Linear(256 + direction_size, hidden_dim // 2)
+        self.rgb = nn.Linear(hidden_dim // 2, 3)
+        # Keras Dense defaults in the original implementation.
+        for layer in self.modules():
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.zeros_(layer.bias)
+
+    def forward(self, points, viewdirs):
+        encoded = positional_encoding(points, self.pos_encoding_dim)
+        features = encoded
+        for i, layer in enumerate(self.layers):
+            features = torch.relu(layer(features))
+            if i == 4:
+                features = torch.cat([encoded, features], dim=-1)
+        sigma = self.density(features)
+        appearance = torch.cat([
+            self.feature(features), positional_encoding(viewdirs, self.dir_encoding_dim)
+        ], dim=-1)
+        rgb = self.rgb(torch.relu(self.view(appearance)))
+        return torch.cat([rgb, sigma], dim=-1)
+
+
+class NeRF(nn.Module):
+    """Independent reference coarse/fine networks; forward defaults to coarse output."""
+
+    def __init__(self, pos_encoding_dim=10, dir_encoding_dim=4, hidden_dim=256,
+                 num_importance=128):
+        super().__init__()
+        if num_importance < 0:
+            raise ValueError('num_importance must be nonnegative')
+        self.num_importance = num_importance
+        self.coarse = NeRFMLP(pos_encoding_dim, dir_encoding_dim, hidden_dim)
+        self.fine = (NeRFMLP(pos_encoding_dim, dir_encoding_dim, hidden_dim)
+                     if num_importance > 0 else None)
+
+    def forward(self, points, rays_d, *, fine=False, return_raw=False):
+        network = self.fine if fine and self.fine is not None else self.coarse
+        raw = network(points, rays_d)
+        if return_raw:
+            return raw
+        return torch.sigmoid(raw[..., :3]), torch.relu(raw[..., 3])
+
+
+class LegacyNeRF(nn.Module):
+    """
+    Previous nine-layer Softplus baseline, retained only for old checkpoints.
 
     Args:
         pos_encoding_dim (int): Number of frequencies for 3D point encoding.
@@ -250,7 +317,7 @@ class MFNBase(nn.Module):
 
 class WaveletLayer(nn.Module):
     """
-    WaveletLayer: recomputes heavy distance matrix on each call.
+    Gabor-like filter with strictly positive learned Gaussian widths.
     """
     def __init__(
         self,
@@ -264,21 +331,28 @@ class WaveletLayer(nn.Module):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features)
         self.mu = nn.Parameter(2 * torch.rand(out_features, in_features) - 1)
-        self.gamma = nn.Parameter(
-            torch.distributions.gamma.Gamma(alpha, beta).sample((out_features,))
-        )
+        initial_gamma = torch.distributions.gamma.Gamma(alpha, beta).sample((out_features,))
+        # Stable inverse Softplus preserves the Gamma-distributed initialization,
+        # including very small samples and values too large for exp(gamma).
+        self.raw_gamma = nn.Parameter(initial_gamma + torch.log(-torch.expm1(-initial_gamma)))
         self.omega0 = omega0
 
         # Scale linear weights by sqrt(gamma)
-        self.linear.weight.data *= weight_scale * torch.sqrt(self.gamma[:, None])
-        self.linear.bias.data.uniform_(-np.pi, np.pi)
+        with torch.no_grad():
+            self.linear.weight.mul_(weight_scale * torch.sqrt(self.gamma[:, None]))
+            self.linear.bias.uniform_(-np.pi, np.pi)
+
+    @property
+    def gamma(self) -> torch.Tensor:
+        # The positive floor also covers Softplus underflow for extreme raw values.
+        return F.softplus(self.raw_gamma) + torch.finfo(self.raw_gamma.dtype).tiny
 
     def _core(self, x: torch.Tensor) -> torch.Tensor:
         D = (
             x.pow(2).sum(-1, keepdim=True)
             + self.mu.pow(2).sum(-1).unsqueeze(0)
             - 2 * x @ self.mu.T
-        )
+        ).clamp_min(0)
         gabor = torch.sin(self.linear(self.omega0 * x))
         return gabor * torch.exp(-0.5 * D * self.gamma[None, :])
 

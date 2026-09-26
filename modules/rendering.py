@@ -2,6 +2,10 @@ import torch
 from torch import Tensor
 from typing import Tuple
 
+from modules.scene import SceneNormalization
+from modules.models import NeRF, LegacyNeRF
+from modules.nerf_reference import render_reference_nerf, sample_depths
+
 
 def stratified_sampling(
     near: float,
@@ -33,7 +37,7 @@ def generate_sample_positions(
     near: float,
     far: float,
     num_samples: int,
-    device: str = 'cpu') -> Tuple[Tensor, Tensor]:
+    device: str = 'cpu', reference: bool = True) -> Tuple[Tensor, Tensor]:
     """
     Generate stratified sample positions for a batch of rays and compute sample intervals.
 
@@ -50,44 +54,38 @@ def generate_sample_positions(
             - sample_positions (Tensor): Sample positions for each ray.
             - deltas (Tensor): Intervals between sampled positions.
     """
-    strat_samples = stratified_sampling(near, far, num_samples, device)
-    deltas = strat_samples[1:] - strat_samples[:-1]
-
-    delta_inf = torch.tensor([1e10], device=deltas.device, dtype=deltas.dtype)
-    deltas = torch.cat([deltas, delta_inf], dim=0)
-
-    sample_positions = (
-        rays_o_batch.unsqueeze(1)
-        + strat_samples.unsqueeze(0).unsqueeze(-1) * rays_d_batch.unsqueeze(1)
-    )
+    depths = (sample_depths(rays_d_batch, near, far, num_samples, perturb=True)
+              if reference else stratified_sampling(near, far, num_samples, device)
+              .expand(len(rays_d_batch), -1))
+    deltas = torch.cat((depths[:, 1:] - depths[:, :-1],
+                        torch.full_like(depths[:, :1], 1e10)), dim=-1)
+    sample_positions = rays_o_batch[:, None] + depths[..., None] * rays_d_batch[:, None]
 
     return sample_positions, deltas
 
 
 def normalize_positions(
     positions: Tensor,
-    near: float,
-    far: float) -> Tensor:
+    scene_normalization: SceneNormalization) -> Tensor:
     """
-    Normalize positions to the range [-1, 1].
+    Map the configured scene cube to [-1, 1] without clipping outside points.
 
     Args:
         positions (Tensor): Sampled positions.
-        near (float): Near bound.
-        far (float): Far bound.
+        scene_normalization (SceneNormalization): World-space center and half-extent.
 
     Returns:
         Tensor: Normalized positions.
     """
-    return 2 * (positions - near) / (far - near) - 1
+    center = positions.new_tensor(scene_normalization.center)
+    return (positions - center) / scene_normalization.scale
 
 
 def query_model(
     model: torch.nn.Module,
     sample_positions_flat: Tensor,
     directions_flat: Tensor,
-    near: float,
-    far: float) -> Tuple[Tensor, Tensor]:
+    scene_normalization: SceneNormalization) -> Tuple[Tensor, Tensor]:
     """
     Normalize sample positions and query the model to obtain colors and densities.
 
@@ -95,16 +93,15 @@ def query_model(
         model (torch.nn.Module): NeRF model.
         sample_positions_flat (Tensor): Flattened sample positions.
         directions_flat (Tensor): Flattened ray directions.
-        near (float): Near bound for normalization.
-        far (float): Far bound for normalization.
+        scene_normalization (SceneNormalization): Scene coordinates used by the model.
 
     Returns:
         Tuple[Tensor, Tensor]: 
             - colors (Tensor): Predicted colors.
             - densities (Tensor): Predicted densities.
     """
-    sample_positions_normalized = normalize_positions(sample_positions_flat, near, far)
-    return model.forward(sample_positions_normalized, directions_flat)
+    sample_positions_normalized = normalize_positions(sample_positions_flat, scene_normalization)
+    return model(sample_positions_normalized, directions_flat)
 
 
 def compute_accumulated_transmittance(betas: Tensor) -> Tensor:
@@ -140,7 +137,7 @@ def composite_volume(
         Tensor: Composite RGB colors for each ray.
     """
     # alpha_i = 1 - exp(-sigma_i * delta_i)
-    alpha = 1 - torch.exp(-densities * deltas.unsqueeze(0))
+    alpha = 1 - torch.exp(-densities * deltas)
 
     # weights_i = T_i * alpha_i
     weights = compute_accumulated_transmittance(1 - alpha) * alpha
@@ -159,11 +156,15 @@ def render_nerf(
     rays_d: Tensor,
     near: float,
     far: float,
-    num_samples: int = 256,
+    num_samples: int | None = None,
     device: str = 'cpu',
     white_background: bool = True,
     chunk_size: int = 8192,
-    stratified: bool = True) -> Tensor:
+    stratified: bool = True,
+    scene_normalization: SceneNormalization = SceneNormalization(),
+    num_importance=None, netchunk=65536, perturb=1.0, lindisp=False,
+    raw_noise_std=0.0, return_aux=False,
+    view_directions: Tensor | None = None) -> Tensor | dict[str, Tensor]:
     """
     Render rays with a NeRF model via volumetric integration.
 
@@ -177,18 +178,45 @@ def render_nerf(
         rays_d (Tensor): Ray directions of shape [num_rays, 3].
         near (float): Near bound for sampling along the rays.
         far (float): Far bound for sampling along the rays.
-        num_samples (int, optional): Number of sample points per ray.
+        num_samples (int, optional): Coarse sample count; defaults to 64 for
+            reference NeRF and 256 for other models.
         device (str, optional): Device on which to perform rendering.
         white_background (bool, optional): If True, composite over a white background.
         chunk_size (int, optional): Number of rays processed per chunk for memory efficiency.
         stratified (bool, optional): If True, use stratified sampling (default), 
                                      else use uniform sampling for validation.
+        scene_normalization (SceneNormalization): World-space scene transform,
+                                                  independent of near/far; defaults to identity.
+        view_directions (Tensor, optional): Original unit world directions for
+            appearance when geometry rays are in NDC. Defaults to unit rays_d.
+        num_importance (int, optional): Additional fine samples for reference NeRF.
+        return_aux (bool): Return reference coarse/fine outputs for the two losses.
+            Scene normalization is ignored for reference NeRF, matching upstream.
 
     Returns:
         Tensor: A tensor of shape [num_rays, 3] containing the rendered RGB colors.
     """
     rays_o = rays_o.to(device)
     rays_d = rays_d.to(device)
+    if view_directions is None:
+        view_directions = torch.nn.functional.normalize(rays_d, dim=-1)
+    else:
+        view_directions = view_directions.to(device)
+        if view_directions.shape != rays_d.shape:
+            raise ValueError('Viewing directions must match geometry ray directions')
+
+    ordinary_model = getattr(model, '_orig_mod', model)
+    if num_samples is None:
+        num_samples = 64 if isinstance(ordinary_model, NeRF) else 256
+    if isinstance(ordinary_model, NeRF):
+        outputs = render_reference_nerf(
+            model, rays_o, rays_d, near, far, num_samples=num_samples,
+            num_importance=ordinary_model.num_importance if num_importance is None else num_importance,
+            chunk_size=chunk_size, netchunk=netchunk, stratified=stratified,
+            perturb=perturb, lindisp=lindisp, white_background=white_background,
+            raw_noise_std=raw_noise_std, view_directions=view_directions,
+        )
+        return outputs if return_aux else outputs['rgb_map']
 
     rgb_out = []
     for i in range(0, rays_o.shape[0], chunk_size):
@@ -203,7 +231,7 @@ def render_nerf(
                 near,
                 far,
                 num_samples,
-                device
+                device, reference=not isinstance(ordinary_model, LegacyNeRF)
             )
         else:
             # Uniform sampling: generate evenly spaced sample positions between near and far.
@@ -222,7 +250,7 @@ def render_nerf(
 
         sample_positions_flat = sample_positions.reshape(-1, 3)
         directions_flat = (
-            rays_d_chunk
+            view_directions[i:i + chunk_size]
             .unsqueeze(1)
             .expand(-1, num_samples, -1)
             .reshape(-1, 3)
@@ -233,15 +261,17 @@ def render_nerf(
             model,
             sample_positions_flat,
             directions_flat,
-            near,
-            far
+            scene_normalization
         )
         
         colors = colors_flat.reshape(rays_o_chunk.shape[0], num_samples, 3)
         densities = densities_flat.reshape(rays_o_chunk.shape[0], num_samples)
 
         # Composite the colors using the computed weights from the densities.
-        composed_rgb = composite_volume(colors, densities, deltas, white_background)
+        # NDC directions remain unnormalized. As in the reference, convert
+        # parameter intervals to distances in the geometry ray's coordinate space.
+        distances = deltas * torch.linalg.vector_norm(rays_d_chunk, dim=-1, keepdim=True)
+        composed_rgb = composite_volume(colors, densities, distances, white_background)
         rgb_out.append(composed_rgb)
 
     return torch.cat(rgb_out, dim=0)

@@ -2,14 +2,62 @@ import numpy as np
 import torch
 import argparse
 import os
+import csv
+import json
+import math
 import imageio
 from tqdm import tqdm
 
-from modules.data import load_dataset, compute_rays
-from modules.models import NeRF, Siren, WaveletNeRF
+from modules.data import load_configured_scene, camera_rays
+from modules.ndc import ndc_camera_rays
+from modules.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
 from modules.rendering import render_nerf
+from modules.scene import SceneNormalization, resolve_scene_normalization
 from modules.utils import load_checkpoint, parse_config
-from modules.camera import pose_spherical
+from modules.camera import render_camera_path
+from modules.experiment import resolve_experiment_config
+
+
+def image_metrics(prediction, target):
+    """Measure floating-point RGB on [0, 1], before PNG clipping/quantization."""
+    if prediction.shape != target.shape or target.ndim != 3 or target.shape[-1] != 3 or target.size == 0:
+        raise ValueError('Prediction and target must have matching H x W x 3 shapes')
+    if not np.isfinite(prediction).all() or not np.isfinite(target).all():
+        raise ValueError('Cannot evaluate nonfinite image values')
+    mse = float(np.mean((prediction.astype(np.float64) - target.astype(np.float64)) ** 2))
+    return {'mse': mse, 'psnr_db': -10 * math.log10(mse) if mse > 0 else math.inf}
+
+
+def write_metrics(rows, output_dir, settings):
+    """Write both mean per-view PSNR and PSNR of pooled RGB squared errors."""
+    if not rows:
+        raise ValueError('Cannot aggregate an empty test split')
+    total_values = sum(row['height'] * row['width'] * 3 for row in rows)
+    pooled_mse = sum(row['mse'] * row['height'] * row['width'] * 3 for row in rows) / total_values
+    summary = {
+        'num_images': len(rows),
+        'mean_psnr_db': sum(row['psnr_db'] for row in rows) / len(rows),
+        'pooled_mse': pooled_mse,
+        'pooled_psnr_db': -10 * math.log10(pooled_mse) if pooled_mse > 0 else math.inf,
+    }
+    report = {'settings': settings, 'summary': summary, 'per_image': rows}
+
+    def json_values(value):
+        # Preserve exact-match PSNR without emitting nonstandard JSON tokens.
+        if isinstance(value, dict):
+            return {key: json_values(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [json_values(item) for item in value]
+        return 'Infinity' if isinstance(value, float) and math.isinf(value) else value
+
+    with open(os.path.join(output_dir, 'metrics.json'), 'w') as file:
+        json.dump(json_values(report), file, indent=2, allow_nan=False)
+        file.write('\n')
+    with open(os.path.join(output_dir, 'metrics.csv'), 'w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    return summary
 
 
 def main():
@@ -17,79 +65,92 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {torch.cuda.get_device_name(0) if device.type == 'cuda' else 'CPU'}")
 
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description="Evaluate test views or render a novel-view trajectory."
+    )
+    parser.add_argument('--config', type=str,
+                        help='Optional overrides; required for legacy checkpoints')
+    parser.add_argument('--checkpoint', type=str, required=True,
+                        help='Path to model checkpoint')
+    parser.add_argument('--output', type=str, default='rendered_frames',
+                        help='Path to output directory')
+    parser.add_argument('--mode', choices=('render', 'test'), default='render',
+                        help='Render the scene camera path (default), or score every ground-truth test view')
+    parser.add_argument('--dataset-path', type=str,
+                        help='Override the dataset location for test evaluation')
+    args = parser.parse_args()
+    checkpoint = load_checkpoint(args.checkpoint)
+    if args.config is None and 'experiment' not in checkpoint:
+        parser.error('--config is required for legacy checkpoints')
+    overrides = parse_config(args.config) if args.config else {}
+    if args.dataset_path is not None:
+        overrides['dataset_path'] = args.dataset_path
+    config = resolve_experiment_config(overrides, checkpoint)
+
     # Reproducibility
-    seed = 42
+    seed = int(config['seed'])
     np.random.seed(seed)
     torch.manual_seed(seed)
     if device.type == 'cuda':
         torch.cuda.manual_seed_all(seed)
 
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(
-        description="Train NeRF on a given dataset using volumetric rendering."
-    )
-    parser.add_argument('--config', type=str, required=True,
-                        help='Path to configuration file')
-    parser.add_argument('--checkpoint', type=str, required=True,
-                        help='Path to model checkpoint')
-    parser.add_argument('--output', type=str, default='rendered_frames',
-                        help='Path to output directory')
-    args = parser.parse_args()
-    config = parse_config(args.config)
-
     # Parameters
-    dataset_path = config.get('dataset_path', './datasets/lego')
-    checkpoint = load_checkpoint(args.checkpoint)
-    model_type = checkpoint.get('model_type', config.get('model_type', 'NeRF')).lower()
+    dataset_path = config['dataset_path']
+    model_type = config['model_type']
+    reference_baseline = model_type == 'nerf' and config['baseline_version'] == 'reference'
     model_path = args.checkpoint
     output_dir = args.output
     os.makedirs(output_dir, exist_ok=True)
-    near = float(config.get('near', 2.0))
-    far = float(config.get('far', 6.0))
-    num_samples = int(config.get('num_samples_eval', 256))
-    chunk_size = int(config.get('chunk_size', 8192))
-    num_render_poses = int(config.get('num_render_poses', 40))
+    near = float(config['near'])
+    far = float(config['far'])
+    scene_normalization = resolve_scene_normalization(config, checkpoint)
+    if reference_baseline:
+        scene_normalization = SceneNormalization()
+    num_samples = int(config['num_samples_eval'])
+    chunk_size = int(config['chunk_size'])
+    num_render_poses = int(config['num_render_poses'])
+    if num_samples <= 0 or chunk_size <= 0:
+        parser.error('num_samples_eval and chunk_size must be positive')
+    if args.mode == 'render' and num_render_poses <= 0:
+        parser.error('num_render_poses must be positive in render mode')
 
     print("===== Evaluation Configuration Summary =====")
     print(f"Dataset path: {dataset_path}")
     print(f"Model type: {model_type}")
     print(f"Model path: {model_path}")
+    print(f"Mode: {args.mode}")
     print(f"Log directory: {output_dir}")
     print(f"Near: {near}")
     print(f"Far: {far}")
+    print(f"Scene center: {scene_normalization.center}")
+    print(f"Scene scale: {scene_normalization.scale}")
     print(f"Num samples: {num_samples}")
     print(f"Chunk size: {chunk_size}")
     print(f"Number of render poses: {num_render_poses}")
     print("=============================================")
 
-    # Generate render poses
-    render_poses = torch.stack(
-        [
-            torch.from_numpy(pose_spherical(angle, -30.0, 4.0))
-            for angle in np.linspace(-180, 180, num_render_poses + 1)[:-1]
-        ],
-        0,
-    )
-
     # Load the model with hyperparameters from config
     if model_type == 'nerf':
-        pos_encoding_dim = int(config.get('pos_encoding_dim', 10))
-        dir_encoding_dim = int(config.get('dir_encoding_dim', 4))
-        hidden_dim       = int(config.get('hidden_dim', 256))
-        model = NeRF(
+        pos_encoding_dim = int(config['pos_encoding_dim'])
+        dir_encoding_dim = int(config['dir_encoding_dim'])
+        hidden_dim       = int(config['hidden_dim'])
+        constructor = NeRF if reference_baseline else LegacyNeRF
+        options = {'num_importance': int(config['num_importance'])} if reference_baseline else {}
+        model = constructor(
             pos_encoding_dim=pos_encoding_dim,
             dir_encoding_dim=dir_encoding_dim,
-            hidden_dim=hidden_dim
+            hidden_dim=hidden_dim, **options
         ).to(device)
 
     elif model_type == 'siren':
-        num_layers       = int(config.get('num_layers', 8))
-        hidden_dim       = int(config.get('siren_hidden_dim', 256))
-        dir_encoding_dim = int(config.get('siren_dir_encoding_dim', 4))
-        sigma_mul        = float(config.get('sigma_mul', 10.0))
-        rgb_mul          = float(config.get('rgb_mul', 1.0))
-        w0               = float(config.get('w0', 30.0))
-        hidden_w0        = float(config.get('hidden_w0', 1.0))
+        num_layers       = int(config['num_layers'])
+        hidden_dim       = int(config['siren_hidden_dim'])
+        dir_encoding_dim = int(config['siren_dir_encoding_dim'])
+        sigma_mul        = float(config['sigma_mul'])
+        rgb_mul          = float(config['rgb_mul'])
+        w0               = float(config['w0'])
+        hidden_w0        = float(config['hidden_w0'])
         model = Siren(
             num_layers=num_layers,
             hidden_dim=hidden_dim,
@@ -101,16 +162,16 @@ def main():
         ).to(device)
 
     elif model_type in ('multiscalewavelet', 'wavelet'):
-        in_features      = int(config.get('wave_in_features', 3))
-        hidden_dim       = int(config.get('wave_hidden_dim', 256))
-        num_layers       = int(config.get('wave_num_layers', 8))
-        dir_encoding_dim = int(config.get('wave_dir_encoding_dim', 4))
-        input_scale      = float(config.get('input_scale', 256.0))
-        weight_scale     = float(config.get('weight_scale', 1.0))
-        alpha            = float(config.get('alpha', 6.0))
-        beta             = float(config.get('beta', 0.5))
-        omega0           = float(config.get('omega0', 5.0))
-        normalized_flag  = config.get('normalized', 'True').lower() in ['true', '1', 'yes']
+        in_features      = int(config['wave_in_features'])
+        hidden_dim       = int(config['wave_hidden_dim'])
+        num_layers       = int(config['wave_num_layers'])
+        dir_encoding_dim = int(config['wave_dir_encoding_dim'])
+        input_scale      = float(config['input_scale'])
+        weight_scale     = float(config['weight_scale'])
+        alpha            = float(config['alpha'])
+        beta             = float(config['beta'])
+        omega0           = float(config['omega0'])
+        normalized_flag  = config['normalized'].lower() in ['true', '1', 'yes']
         model = WaveletNeRF(
             in_features=in_features,
             hidden_dim=hidden_dim,
@@ -136,24 +197,58 @@ def main():
     else:
         print("Skipping torch.compile: CPU-only environment")
     
-    # Load a dummy image to get height and width
-    images_val_np, _, focal_length = load_dataset(dataset_path, mode='test', single_image=True)
-    single_val_image = images_val_np[0:1]
+    # Test views use loaded cameras. Novel paths can render solely from saved metadata.
+    dataset_metadata = checkpoint.get('experiment', {}).get('dataset', {})
+    white_background = config['white_background'].lower() == 'true'
+    if args.mode == 'test':
+        scene = load_configured_scene({**config, 'testskip': '1'}, splits=('test',))
+        split = scene.split('test')
+        images, render_poses, intrinsics = split.images, split.poses, split.intrinsics
+        image_paths, source_indices = split.frame_paths, split.indices
+        height, width = images.shape[1:3]
+        if 'world_to_scene' in dataset_metadata and not np.allclose(
+                scene.world_to_scene, dataset_metadata['world_to_scene']):
+            raise ValueError('Evaluation scene preprocessing differs from the saved experiment')
+    elif 'experiment' in checkpoint:
+        camera = dataset_metadata.get('render_intrinsics')
+        if camera is None:
+            # Checkpoints written before explicit scene metadata stored one camera.
+            camera = dataset_metadata['splits']['train']['intrinsics']
+            camera = {**camera, 'matrix': [[camera['fx'], 0, camera.get('cx', camera['width'] / 2)],
+                                         [0, camera.get('fy', camera['fx']), camera.get('cy', camera['height'] / 2)],
+                                         [0, 0, 1]]}
+        height, width = camera['height'], camera['width']
+        intrinsics = np.asarray(camera['matrix'], dtype=np.float32)[None]
+        path_settings = dataset_metadata.get('render_path', {'type': 'orbit', 'elevation': -30., 'radius': 4.})
+    else:
+        scene = load_configured_scene(config, splits=('test',))
+        height, width = scene.images.shape[1:3]
+        intrinsics = scene.intrinsics.mean(axis=0, keepdims=True)
+        path_settings = scene.render_path
+    if args.mode == 'render':
+        render_poses = render_camera_path(path_settings, num_render_poses)
 
     # Initialize tqdm for the rendering loop
     render_loop = tqdm(
-        range(render_poses.shape[0]),
-        desc="Rendering frames",
+        range(len(render_poses)),
+        desc="Evaluating test views" if args.mode == 'test' else "Rendering frames",
         unit="frame",
         dynamic_ncols=True
     )
         
     # Render the images
     model.eval()
+    rows = []
     for i in render_loop:
-        single_val_c2w = render_poses[i:i + 1]
-        single_val_c2w_np = single_val_c2w.cpu().numpy()
-        rays_o_val_np, rays_d_val_np, _ = compute_rays(single_val_image, single_val_c2w_np, focal_length)
+        camera = intrinsics[i:i + 1] if args.mode == 'test' else intrinsics
+        if config['dataset_type'] == 'llff':
+            rays_o_val_np, rays_d_val_np, view_directions = ndc_camera_rays(
+                height, width, render_poses[i:i + 1], camera)
+            view_options = {'view_directions': torch.from_numpy(view_directions[0]).to(device)}
+        else:
+            rays_o_val_np, rays_d_val_np = camera_rays(
+                height, width, render_poses[i:i + 1], camera, normalize=not reference_baseline)
+            view_options = {}
         rays_o_val = torch.from_numpy(rays_o_val_np).float().to(device).squeeze(0)
         rays_d_val = torch.from_numpy(rays_d_val_np).float().to(device).squeeze(0)
 
@@ -169,22 +264,56 @@ def main():
                 far,
                 num_samples=num_samples,
                 device=device,
-                white_background=True,
+                white_background=white_background,
                 chunk_size=chunk_size,
-                stratified=False
+                stratified=False,
+                scene_normalization=scene_normalization,
+                **view_options,
+                **({'num_importance': int(config['num_importance']), 'netchunk': int(config['netchunk']),
+                    'lindisp': config['lindisp'].lower() == 'true'} if reference_baseline else {})
             )
         
         # Reshape to image
-        H_val, W_val = single_val_image.shape[1:3]
+        H_val, W_val = height, width
         pred_val_rgb = pred_val_rgb.reshape(H_val, W_val, 3).cpu().numpy()
+
+        if args.mode == 'test':
+            rows.append({
+                'index': int(source_indices[i]), 'file_path': image_paths[i],
+                'height': H_val, 'width': W_val,
+                **image_metrics(pred_val_rgb, images[i]),
+            })
         
-        # Log the rendered image as a TensorBoard image
+        # Quantization is for visualization only, never metric computation.
         pred_val_rgb_clamped = np.clip(pred_val_rgb, 0.0, 1.0)
         frame = (pred_val_rgb_clamped * 255).astype(np.uint8)
 
         # Save frame as PNG
-        frame_filename = os.path.join(output_dir, f"frame_{i:04d}.png")
+        prefix = 'test' if args.mode == 'test' else 'frame'
+        frame_filename = os.path.join(output_dir, f"{prefix}_{i:04d}.png")
         imageio.imwrite(frame_filename, frame)
+
+    if args.mode == 'test':
+        summary = write_metrics(rows, output_dir, {
+            'checkpoint': os.path.abspath(model_path), 'model_type': model_type,
+            'dataset_path': os.path.abspath(dataset_path), 'split': 'test',
+            'data_range': 1.0, 'color_space': 'stored RGB; no linear-light conversion',
+            'background': 'white' if white_background else 'black',
+            'metric_input': 'unclipped, unquantized float RGB; full image; no mask or crop',
+            'mse_dtype': 'float64', 'sampling': 'uniform; stratified=False',
+            'dataset_type': config['dataset_type'],
+            'frame_order': 'sorted LLFF images, holdout subset' if config['dataset_type'] == 'llff'
+                           else 'transforms_test.json frames',
+            'intrinsics': intrinsics.tolist(),
+            'num_samples': num_samples, 'chunk_size': chunk_size,
+            'near': near, 'far': far, 'scene_normalization': scene_normalization.to_dict(),
+            'seed': seed,
+            'baseline_version': config.get('baseline_version'),
+            'num_importance': int(config['num_importance']) if reference_baseline else 0,
+        })
+        print(f"Test views: {summary['num_images']}; mean PSNR: {summary['mean_psnr_db']:.4f} dB; "
+              f"pooled PSNR: {summary['pooled_psnr_db']:.4f} dB")
+        print(f"Metrics saved to {output_dir}/metrics.json and metrics.csv")
 
 
 if __name__ == '__main__':
