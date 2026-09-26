@@ -1,3 +1,9 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2025-2026 José del Rey
+# MFN/Gabor code adapted from Fathony et al. in 2025, with local wavelet
+# extensions. NeRF and SIREN upstream MIT notices are preserved in ../LICENSE.
+# Sources and modification details: ../LICENSE, project attribution section.
+
 import torch
 import torch.nn as nn
 import numpy as np

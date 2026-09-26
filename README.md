@@ -3,7 +3,10 @@
 
 [NeRF](http://www.matthewtancik.com/nerf) (Neural Radiance Fields) is a method that achieves state-of-the-art results for synthesizing novel views of complex scenes. This project is a PyTorch implementation of NeRF, extended with [SIREN-based](https://arxiv.org/abs/2006.09661) and [MFN-based](https://arxiv.org/abs/2011.13961) NeRF variants. The code is based on the authors' original TensorFlow implementation [here](https://github.com/bmild/nerf).
 
-![](imgs/nerf_lego.gif)
+![Lego novel-view render generated with this repository](imgs/nerf_lego.gif)
+
+Lego render created by José del Rey using this repository and the NeRF Synthetic
+dataset.
 
 ## Installation
 
@@ -31,11 +34,21 @@ conda activate nerf-pytorch
 
 ### Training
 
-Download data for the `lego` dataset.
+Download the original NeRF example archive containing the synthetic `lego`
+scene and the LLFF `fern` scene. Requires Bash, `wget`, and `unzip`.
 
 ```
 bash download_dataset.sh
 ```
+
+The script places the scenes in `datasets/lego/` and `datasets/fern/`, relative
+to the script's location. Existing scene paths are preserved, and rerunning the
+script downloads only when a scene is missing. Failed downloads, extraction,
+or archive validation stop the script and remove its temporary files.
+
+The Python loader currently supports the Blender-style synthetic format used
+by Lego. Fern is downloaded for upcoming LLFF support; it cannot yet be used
+with the current training and rendering code.
 
 Train the **baseline NeRF** on `lego`:
 
@@ -136,7 +149,11 @@ ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png \
  <sup>1</sup>UC Berkeley, <sup>2</sup>Google Research, <sup>3</sup>UC San Diego  
   \*denotes equal contribution  
   
-![](imgs/pipeline.jpg)
+![NeRF pipeline figure from Mildenhall et al.](imgs/pipeline.jpg)
+
+Pipeline figure from Mildenhall et al., *NeRF: Representing Scenes as Neural
+Radiance Fields for View Synthesis* (ECCV 2020), obtained from the
+[original NeRF repository](https://github.com/bmild/nerf/blob/master/imgs/pipeline.jpg).
 
 > A neural radiance field is a simple fully connected network (weights are ~5MB) trained to reproduce input views of a single scene using a rendering loss. The network directly maps from spatial location and viewing direction (5D input) to color and opacity (4D output), acting as the "volume" so we can use volume rendering to differentiably render new views
 
@@ -154,3 +171,27 @@ We acknowledge the original authors of NeRF for their groundbreaking work:
     primaryClass={cs.CV}
 }
 ```
+
+## License and attribution
+
+Project-authored code and documentation, and the combined software including
+the MFN adaptation, are licensed under [AGPL-3.0-only](LICENSE). Upstream MIT
+notices for NeRF and SIREN are preserved in the same file.
+
+The MFN base and Gabor-style filter construction in `modules/models.py` are
+adapted from [Fathony et al.'s implementation](https://github.com/boschresearch/multiplicative-filter-networks).
+Frequency controls, optional LayerNorm, and the NeRF integration are local
+extensions. The SIREN layers draw on
+[Sitzmann et al.'s implementation](https://github.com/vsitzmann/siren).
+
+The pipeline figure belongs to the original NeRF authors and is not relicensed
+by this project. The Lego GIF was generated with this repository; its
+project-authored contributions are offered under AGPL-3.0-only, without changing
+rights in the underlying scene assets.
+
+The downloader uses the example archive distributed by the
+[original NeRF project](https://github.com/bmild/nerf), which contains Lego and
+Fern. The script retains both scenes. Downloaded datasets remain subject
+to their original rights-holder terms; this repository's software license
+grants no additional dataset rights. See [LICENSE](LICENSE) for source links,
+attribution, and the complete notices.
