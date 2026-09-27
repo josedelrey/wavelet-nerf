@@ -23,16 +23,26 @@ class NeRFMLP(nn.Module):
     def __init__(self, pos_encoding_dim=10, dir_encoding_dim=4, hidden_dim=256):
         super().__init__()
         if hidden_dim < 2 or pos_encoding_dim < 0 or dir_encoding_dim < 0:
-            raise ValueError('NeRF requires hidden_dim >= 2 and nonnegative encoding dimensions')
+            raise ValueError(
+                "NeRF requires hidden_dim >= 2 and nonnegative encoding dimensions"
+            )
         self.pos_encoding_dim = pos_encoding_dim
         self.dir_encoding_dim = dir_encoding_dim
         position_size = 3 + 6 * pos_encoding_dim
         direction_size = 3 + 6 * dir_encoding_dim
-        self.layers = nn.ModuleList([
-            nn.Linear(position_size if i == 0 else
-                      hidden_dim + position_size if i == 5 else hidden_dim, hidden_dim)
-            for i in range(8)
-        ])
+        self.layers = nn.ModuleList(
+            [
+                nn.Linear(
+                    position_size
+                    if i == 0
+                    else hidden_dim + position_size
+                    if i == 5
+                    else hidden_dim,
+                    hidden_dim,
+                )
+                for i in range(8)
+            ]
+        )
         self.density = nn.Linear(hidden_dim, 1)
         self.feature = nn.Linear(hidden_dim, 256)
         self.view = nn.Linear(256 + direction_size, hidden_dim // 2)
@@ -51,9 +61,13 @@ class NeRFMLP(nn.Module):
             if i == 4:
                 features = torch.cat([encoded, features], dim=-1)
         sigma = self.density(features)
-        appearance = torch.cat([
-            self.feature(features), positional_encoding(viewdirs, self.dir_encoding_dim)
-        ], dim=-1)
+        appearance = torch.cat(
+            [
+                self.feature(features),
+                positional_encoding(viewdirs, self.dir_encoding_dim),
+            ],
+            dim=-1,
+        )
         rgb = self.rgb(torch.relu(self.view(appearance)))
         return torch.cat([rgb, sigma], dim=-1)
 
@@ -61,15 +75,23 @@ class NeRFMLP(nn.Module):
 class NeRF(nn.Module):
     """Independent reference coarse/fine networks; forward defaults to coarse output."""
 
-    def __init__(self, pos_encoding_dim=10, dir_encoding_dim=4, hidden_dim=256,
-                 num_importance=128):
+    def __init__(
+        self,
+        pos_encoding_dim=10,
+        dir_encoding_dim=4,
+        hidden_dim=256,
+        num_importance=128,
+    ):
         super().__init__()
         if num_importance < 0:
-            raise ValueError('num_importance must be nonnegative')
+            raise ValueError("num_importance must be nonnegative")
         self.num_importance = num_importance
         self.coarse = NeRFMLP(pos_encoding_dim, dir_encoding_dim, hidden_dim)
-        self.fine = (NeRFMLP(pos_encoding_dim, dir_encoding_dim, hidden_dim)
-                     if num_importance > 0 else None)
+        self.fine = (
+            NeRFMLP(pos_encoding_dim, dir_encoding_dim, hidden_dim)
+            if num_importance > 0
+            else None
+        )
 
     def forward(self, points, rays_d, *, fine=False, return_raw=False):
         network = self.fine if fine and self.fine is not None else self.coarse
@@ -86,6 +108,7 @@ class Sine(nn.Module):
     Args:
         w0 (float): Frequency scaling factor for the sine activation.
     """
+
     def __init__(self, w0: float = 30.0) -> None:
         super().__init__()
         self.w0 = w0
@@ -104,11 +127,10 @@ class SirenLayer(nn.Module):
         w0 (float): Frequency scaling factor for the sine activation.
         is_first (bool): If True, applies a different weight initialization.
     """
-    def __init__(self,
-                 input_dim: int,
-                 hidden_dim: int,
-                 w0: float = 1.0,
-                 is_first: bool = False) -> None:
+
+    def __init__(
+        self, input_dim: int, hidden_dim: int, w0: float = 1.0, is_first: bool = False
+    ) -> None:
         super().__init__()
         self.layer = nn.Linear(input_dim, hidden_dim, bias=True)
         self.activation = Sine(w0)
@@ -134,12 +156,12 @@ class SirenLayer(nn.Module):
 class Siren(nn.Module):
     """
     SIREN-ized NeRF model.
-    
+
     This model always uses separate branches for density and appearance (RGB).
     It processes input 3D points with a base MLP (using SIREN layers),
     then splits the computation into a density branch and an RGB head.
     The RGB head combines remapped features with a positional encoding of ray directions.
-    
+
     Args:
         num_layers (int): Number of layers in the base MLP.
         hidden_dim (int): Hidden dimension.
@@ -149,15 +171,17 @@ class Siren(nn.Module):
         w0 (float): w0 parameter for the first SIREN layer.
         hidden_w0 (float): w0 parameter for subsequent SIREN layers.
     """
+
     def __init__(
         self,
         num_layers: int = 8,
         hidden_dim: int = 256,
         dir_encoding_dim: int = 4,
-        sigma_mul: float = 10.,
-        rgb_mul: float = 1.,
-        w0: float = 30.,
-        hidden_w0: float = 1.)-> None:
+        sigma_mul: float = 10.0,
+        rgb_mul: float = 1.0,
+        w0: float = 30.0,
+        hidden_w0: float = 1.0,
+    ) -> None:
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
         self.sigma_mul = sigma_mul
@@ -170,25 +194,21 @@ class Siren(nn.Module):
         self.block1 = nn.Sequential(*base_layers)
 
         # Density branch: outputs density from base features
-        self.density_branch = nn.Sequential(
-            nn.Linear(hidden_dim, 1)
-        )
+        self.density_branch = nn.Sequential(nn.Linear(hidden_dim, 1))
 
         # Feature remapping: prepares features for the RGB head
-        self.feature_remap = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim)
-        )
+        self.feature_remap = nn.Sequential(nn.Linear(hidden_dim, hidden_dim))
 
         # RGB head: combines remapped features with encoded ray directions
         ray_encoding_size = 6 * self.dir_encoding_dim + 3
         self.rgb_head = nn.Sequential(
             SirenLayer(hidden_dim + ray_encoding_size, hidden_dim // 2, w0=hidden_w0),
-            nn.Linear(hidden_dim // 2, 3)
+            nn.Linear(hidden_dim // 2, 3),
         )
 
-    def forward(self, 
-                points: torch.Tensor, 
-                rays_d: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, points: torch.Tensor, rays_d: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Process points through the base MLP
         base = self.block1(points)
 
@@ -210,12 +230,13 @@ class Siren(nn.Module):
 class MFNBase(nn.Module):
     """
     MFNBase: Multiplicative filter network base class.
-    
+
     This is the original implementation from "Multiplicative Filter Networks"
     by Rizal Fathony, Anit Kumar Sahu, Devin Willmott, and J. Zico Kolter (2021).
-    Expects the child class to define the 'filters' attribute, which should be 
+    Expects the child class to define the 'filters' attribute, which should be
     a nn.ModuleList of n_layers+1 filters with output equal to hidden_size.
     """
+
     def __init__(
         self, hidden_size, out_size, n_layers, weight_scale, bias=True, output_act=False
     ):
@@ -243,12 +264,13 @@ class MFNBase(nn.Module):
             out = torch.sin(out)
 
         return out
-    
+
 
 class WaveletLayer(nn.Module):
     """
     Gabor-like filter with strictly positive learned Gaussian widths.
     """
+
     def __init__(
         self,
         in_features: int,
@@ -261,10 +283,14 @@ class WaveletLayer(nn.Module):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features)
         self.mu = nn.Parameter(2 * torch.rand(out_features, in_features) - 1)
-        initial_gamma = torch.distributions.gamma.Gamma(alpha, beta).sample((out_features,))
+        initial_gamma = torch.distributions.gamma.Gamma(alpha, beta).sample(
+            (out_features,)
+        )
         # Stable inverse Softplus preserves the Gamma-distributed initialization,
         # including very small samples and values too large for exp(gamma).
-        self.raw_gamma = nn.Parameter(initial_gamma + torch.log(-torch.expm1(-initial_gamma)))
+        self.raw_gamma = nn.Parameter(
+            initial_gamma + torch.log(-torch.expm1(-initial_gamma))
+        )
         self.omega0 = omega0
 
         # Scale linear weights by sqrt(gamma)
@@ -293,7 +319,7 @@ class WaveletLayer(nn.Module):
 class WaveletNet(MFNBase):
     """
     WaveletNet: Network using WaveletLayer filters, with optional normalization.
-    
+
     Args:
         in_features (int): Input feature dimension.
         hidden_features (int): Hidden feature dimension.
@@ -308,6 +334,7 @@ class WaveletNet(MFNBase):
         output_act (bool): Whether to apply final sine activation (default: False).
         normalized (bool): Whether to apply LayerNorm on filter and linear outputs (default: False).
     """
+
     def __init__(
         self,
         in_features,
@@ -330,17 +357,19 @@ class WaveletNet(MFNBase):
         alpha_scaled = alpha / n_layers
 
         # Create Wavelet filter layers
-        self.filters = nn.ModuleList([
-            WaveletLayer(
-                in_features,
-                hidden_features,
-                scale,
-                alpha_scaled,
-                beta,
-                omega0,
-            )
-            for _ in range(n_layers)
-        ])
+        self.filters = nn.ModuleList(
+            [
+                WaveletLayer(
+                    in_features,
+                    hidden_features,
+                    scale,
+                    alpha_scaled,
+                    beta,
+                    omega0,
+                )
+                for _ in range(n_layers)
+            ]
+        )
 
         if self.normalized:
             # LayerNorm for each filter and each linear branch
@@ -363,9 +392,9 @@ class WaveletNet(MFNBase):
             if self.normalized:
                 f = self.filter_norms[i](f)
 
-            linear_out = self.linear[i-1](out)
+            linear_out = self.linear[i - 1](out)
             if self.normalized:
-                linear_out = self.linear_norms[i-1](linear_out)
+                linear_out = self.linear_norms[i - 1](linear_out)
 
             out = f * linear_out
 
@@ -379,6 +408,7 @@ class WaveletNeRF(nn.Module):
     """
     NeRF-style model using a WaveletNet base and simple linear RGB head.
     """
+
     def __init__(
         self,
         in_features: int = 3,
@@ -390,7 +420,7 @@ class WaveletNeRF(nn.Module):
         alpha: float = 6.0,
         beta: float = 0.5,
         omega0: float = 5.0,
-        normalized: bool = True
+        normalized: bool = True,
     ) -> None:
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
@@ -421,15 +451,13 @@ class WaveletNeRF(nn.Module):
             nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
             nn.ReLU(),
             nn.Linear(hidden_dim // 2, 3),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(
-        self,
-        points: torch.Tensor,
-        rays_d: torch.Tensor
+        self, points: torch.Tensor, rays_d: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        
+
         # Base features
         base_feats = self.base_net(points)
 

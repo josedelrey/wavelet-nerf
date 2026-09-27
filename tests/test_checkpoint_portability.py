@@ -37,28 +37,33 @@ class CheckpointPortabilityTests(unittest.TestCase):
         optimizer = torch.optim.Adam(source.parameters(), lr=0.01)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
         if source_compiled:
-            source = torch.compile(source, backend='eager')
+            source = torch.compile(source, backend="eager")
         self.update(source, optimizer, scheduler)
-        path = save_checkpoint(1, source, optimizer, scheduler, self.root, 'test', 'run')
+        path = save_checkpoint(
+            1, source, optimizer, scheduler, self.root, "test", "run"
+        )
 
-        checkpoint = torch.load(path, map_location='cpu', weights_only=True)
-        self.assertFalse(any(key.startswith('_orig_mod.') for key in checkpoint['model_state_dict']))
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        self.assertFalse(
+            any(key.startswith("_orig_mod.") for key in checkpoint["model_state_dict"])
+        )
 
         checkpoint = load_checkpoint(path)
-        self.assertEqual(checkpoint['step'], 1)
-        self.assertEqual(checkpoint['model_type'], 'nerf')
+        self.assertEqual(checkpoint["step"], 1)
+        self.assertEqual(checkpoint["model_type"], "nerf")
         destination = self.model()
-        self.assertEqual(checkpoint['model_state_dict']._metadata,
-                         destination.state_dict()._metadata)
-        destination.load_state_dict(checkpoint['model_state_dict'])
+        self.assertEqual(
+            checkpoint["model_state_dict"]._metadata, destination.state_dict()._metadata
+        )
+        destination.load_state_dict(checkpoint["model_state_dict"])
         restored_optimizer = torch.optim.Adam(destination.parameters(), lr=0.01)
         restored_scheduler = torch.optim.lr_scheduler.StepLR(
             restored_optimizer, step_size=1, gamma=0.9
         )
-        restored_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        restored_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        restored_optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        restored_scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         if destination_compiled:
-            destination = torch.compile(destination, backend='eager')
+            destination = torch.compile(destination, backend="eager")
 
         source.eval()
         destination.eval()
@@ -70,24 +75,27 @@ class CheckpointPortabilityTests(unittest.TestCase):
             torch.testing.assert_close(expected, actual)
         self.assertEqual(scheduler.state_dict(), restored_scheduler.state_dict())
         for state in restored_optimizer.state.values():
-            self.assertEqual(int(state['step']), 2)
+            self.assertEqual(int(state["step"]), 2)
 
     def test_new_checkpoints_work_with_all_compilation_combinations(self):
         for source_compiled in (False, True):
             for destination_compiled in (False, True):
-                with self.subTest(source=source_compiled, destination=destination_compiled):
+                with self.subTest(
+                    source=source_compiled, destination=destination_compiled
+                ):
                     self.round_trip(source_compiled, destination_compiled)
-
 
     def test_incompatible_architecture_still_fails_strictly(self):
         source = self.model()
         optimizer = torch.optim.Adam(source.parameters())
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
-        path = save_checkpoint(0, source, optimizer, scheduler, self.root, 'nerf', 'incompatible')
+        path = save_checkpoint(
+            0, source, optimizer, scheduler, self.root, "nerf", "incompatible"
+        )
         checkpoint = load_checkpoint(path)
         with self.assertRaises(RuntimeError):
-            torch.nn.Linear(3, 2).load_state_dict(checkpoint['model_state_dict'])
+            torch.nn.Linear(3, 2).load_state_dict(checkpoint["model_state_dict"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

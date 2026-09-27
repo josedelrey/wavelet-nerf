@@ -5,7 +5,7 @@ PyTorch research code for novel-view synthesis with [NeRF](https://github.com/bm
 based on [MFNs](https://arxiv.org/abs/2011.13961). The supplied experiments cover
 synthetic Lego (Blender format) and forward-facing Fern (LLFF format).
 
-![Lego novel-view render generated with this repository](imgs/nerf_lego.gif)
+![Lego novel-view render generated with this repository](assets/nerf_lego.gif)
 
 Historical Lego render created by José del Rey using this repository and the
 NeRF Synthetic dataset. The exact model variant, configuration, checkpoint and
@@ -43,7 +43,7 @@ CUDA 13.0 on Linux or Windows, select the `cu130` group instead:
 
 ```bash
 uv sync --locked --no-group cpu --group cu130
-uv run --locked --no-group cpu --group cu130 python train.py --config config/config_nerf_lego.yaml
+uv run --locked --no-group cpu --group cu130 python train.py --config configs/config_nerf_lego.yaml
 ```
 
 Use the same group flags on subsequent `uv run` commands; omitting them selects
@@ -112,17 +112,17 @@ two updates with small NeRF networks at factor-32 resolution. They exercise the
 workflow and do not produce trained, benchmark-quality results:
 
 ```bash
-uv run --locked python train.py --config config/smoke/config_nerf_lego.yaml
-uv run --locked python train.py --config config/smoke/config_nerf_fern.yaml
+uv run --locked python train.py --config configs/smoke/config_nerf_lego.yaml
+uv run --locked python train.py --config configs/smoke/config_nerf_fern.yaml
 ```
 
 Exercise resume from the first completed update; `num_iters: 2` is the total
 target, so this performs one further update:
 
 ```bash
-uv run --locked python train.py --config config/smoke/config_nerf_lego.yaml \
+uv run --locked python train.py --config configs/smoke/config_nerf_lego.yaml \
   --resume models/nerf_lego_smoke/nerf_lego_smoke_000001.pth
-uv run --locked python train.py --config config/smoke/config_nerf_fern.yaml \
+uv run --locked python train.py --config configs/smoke/config_nerf_fern.yaml \
   --resume models/nerf_fern_smoke/nerf_fern_smoke_000001.pth
 ```
 
@@ -156,7 +156,7 @@ Choose `dataset_type: blender` for NeRF Synthetic scenes such as Lego, or
 `dataset_type: llff` for forward-facing LLFF scenes such as Fern. Both formats
 work with NeRF, SIREN and WaveletNeRF.
 
-Configuration files use a flat YAML mapping. Start with an example in `config/`,
+Configuration files use a flat YAML mapping. Start with an example in `configs/`,
 or use a minimal training config such as:
 
 ```yaml
@@ -195,7 +195,7 @@ Both commands accept `--device`, `--compile` / `--no-compile` and `--netchunk`;
 training also accepts `--num-workers`. CLI values override YAML. For example:
 
 ```bash
-uv run --locked python train.py --config config/config_siren_lego.yaml --device cpu --no-compile --num-workers 0
+uv run --locked python train.py --config configs/config_siren_lego.yaml --device cpu --no-compile --num-workers 0
 uv run --locked --no-group cpu --group cu130 python eval.py --checkpoint models/nerf_lego/nerf_lego_050000.pth --device cuda:0 --compile
 ```
 
@@ -231,7 +231,7 @@ works, but full training is substantially more demanding than the smoke runs;
 use the CUDA group flags from [installation](#installation) for an NVIDIA GPU.
 All checkpoint examples below assume the indicated update has been reached.
 
-| Configuration in `config/` | Experiment directory name | Target updates | Downsampling |
+| Configuration in `configs/` | Experiment directory name | Target updates | Downsampling |
 | --- | --- | ---: | ---: |
 | `config_nerf_lego.yaml` | `nerf_lego` | 500,000 | 1 |
 | `config_siren_lego.yaml` | `siren_lego` | 300,000 | 1 |
@@ -247,33 +247,33 @@ repeat it and end in the completed-update count, padded to at least six digits.
 Train the **baseline NeRF** on `lego`:
 
 ```
-uv run --locked python train.py --config config/config_nerf_lego.yaml
+uv run --locked python train.py --config configs/config_nerf_lego.yaml
 ```
 
 Train the **SIREN-NeRF** on `lego`:
 
 ```
-uv run --locked python train.py --config config/config_siren_lego.yaml
+uv run --locked python train.py --config configs/config_siren_lego.yaml
 ```
 
 Train the **MFN (WaveletNet) NeRF** on `lego`:
 
 ```
-uv run --locked python train.py --config config/config_wavelet_lego.yaml
+uv run --locked python train.py --config configs/config_wavelet_lego.yaml
 ```
 
 Train on **Fern** using one of the corresponding configs:
 
 ```bash
-uv run --locked python train.py --config config/config_nerf_fern.yaml
-uv run --locked python train.py --config config/config_siren_fern.yaml
-uv run --locked python train.py --config config/config_wavelet_fern.yaml
+uv run --locked python train.py --config configs/config_nerf_fern.yaml
+uv run --locked python train.py --config configs/config_siren_fern.yaml
+uv run --locked python train.py --config configs/config_wavelet_fern.yaml
 ```
 
 To run the alternative factor-4 Fern baseline:
 
 ```bash
-uv run --locked python train.py --config config/config_nerf_fern_paper.yaml
+uv run --locked python train.py --config configs/config_nerf_fern_paper.yaml
 ```
 
 LLFF scenes require `poses_bounds.npy` and RGB images in `images/`, or an
@@ -282,7 +282,7 @@ lexicographically to match the pose rows. `config_nerf_fern.yaml` follows the
 [original factor-8 Fern quick start](https://github.com/bmild/nerf/blob/master/config_fern.txt),
 including 1,024 rays and 64 additional fine samples. Its explicit training budget
 is 200,000 updates. The SIREN and wavelet configs also use factor 8. To select
-the factor-4 paper settings, use `config/config_nerf_fern_paper.yaml`; it has its
+the factor-4 paper settings, use `configs/config_nerf_fern_paper.yaml`; it has its
 own experiment name and retains 4,096 rays and 128 additional fine samples.
 Cached images are used at their existing resolution, otherwise Pillow
 resizes originals in memory. Loading does not write dataset files or require
@@ -353,11 +353,11 @@ Resume training from a checkpoint, using the config for that experiment:
 
 ```bash
 # Lego
-uv run --locked python train.py --config config/config_nerf_lego.yaml \
+uv run --locked python train.py --config configs/config_nerf_lego.yaml \
   --resume ./models/nerf_lego/nerf_lego_050000.pth
 
 # Fern
-uv run --locked python train.py --config config/config_nerf_fern.yaml \
+uv run --locked python train.py --config configs/config_nerf_fern.yaml \
   --resume ./models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth
 ```
 
@@ -597,7 +597,7 @@ dataset_path: ./datasets/chair
 Then run:
 
 ```
-uv run --locked python train.py --config config/config_nerf_lego.yaml
+uv run --locked python train.py --config configs/config_nerf_lego.yaml
 ```
 
 This example uses the existing baseline config after changing its dataset path.
@@ -642,33 +642,15 @@ infinite PSNR, represented as the string `"Infinity"` in standard JSON and `inf`
 in CSV. SSIM and LPIPS are not currently reported; PSNR alone should not be
 presented as a complete reproduction of a multi-metric published benchmark.
 
-### Verify the downloaded examples
+### Verification results
 
-Run a short CPU check on the real downloaded data for all six combinations of
-Lego/Fern and NeRF/SIREN/wavelet:
-
-```bash
-bash download_dataset.sh
-uv run --locked python scripts/verify_examples.py
-```
-
-This uses each example's model architecture and scene conventions, but reduces
-resolution to factor 32, training to one update followed by a resume to two,
-sampling to four coarse samples (plus four fine samples for NeRF), and novel
-rendering to two frames. It runs validation, evaluates every test view, checks
-finite MSE/PSNR and output counts, and saves configs, logs, checkpoints, metrics,
-frames and `verification.json` in a fresh directory under
-`renders/example_verification/`. Generated outputs and downloaded data are
-ignored by Git. `--factor` and `--output` can change verification resolution
-and destination; the example configs themselves are never modified.
-
-This check passed on the official archive on 2026-09-27 for all six cases:
+CPU workflow checks passed on the official archive on 2026-09-27 for all six cases:
 200 Lego test images per model at 25×25 and three held-out Fern images per model
 at 94×126. The downloader installed both scenes, retained Fern's cached factor-4
 and factor-8 images, and preserved existing scene paths on rerun. This verifies
 the CPU execution workflow on actual data. Full training at the example
 resolutions, GPU runs on the downloaded scenes and reproduction of benchmark scores have not been
-verified by this check.
+verified by those checks.
 
 The [checked-in smoke commands](#quick-cpu-smoke-run) were also verified on
 2026-09-27 in a fresh local clone with a separate `uv sync --locked` CPU
@@ -683,7 +665,7 @@ Once you have trained a model, render frames with:
 ```
 uv run --locked python eval.py \
   --mode render \
-  --config config/config_nerf_lego.yaml \
+  --config configs/config_nerf_lego.yaml \
   --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
   --output ./renders/nerf_lego_eval
 ```
@@ -760,7 +742,7 @@ deliberately, run `uv lock --upgrade-package <dependency>`, then
  <sup>1</sup>UC Berkeley, <sup>2</sup>Google Research, <sup>3</sup>UC San Diego  
   \*denotes equal contribution  
   
-![NeRF pipeline figure from Mildenhall et al.](imgs/pipeline.jpg)
+![NeRF pipeline figure from Mildenhall et al.](assets/pipeline.jpg)
 
 Method diagram from Mildenhall et al., *NeRF: Representing Scenes as Neural
 Radiance Fields for View Synthesis* (ECCV 2020), obtained from the

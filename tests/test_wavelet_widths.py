@@ -12,11 +12,13 @@ class WaveletWidthTests(unittest.TestCase):
         torch.manual_seed(42)
         original_weights = torch.nn.Linear(3, 5).weight.detach().clone()
         torch.manual_seed(42)
-        with patch.object(torch.distributions.Gamma, 'sample', return_value=widths):
+        with patch.object(torch.distributions.Gamma, "sample", return_value=widths):
             layer = WaveletLayer(3, 5, weight_scale=2.0)
         self.assertTrue(torch.isfinite(layer.raw_gamma).all())
         torch.testing.assert_close(layer.gamma, widths)
-        torch.testing.assert_close(layer.linear.weight, original_weights * 2 * widths.sqrt()[:, None])
+        torch.testing.assert_close(
+            layer.linear.weight, original_weights * 2 * widths.sqrt()[:, None]
+        )
 
     def test_extreme_raw_widths_have_bounded_finite_outputs_and_gradients(self):
         for raw_width in [-1000.0, -10.0, 0.0, 1000.0]:
@@ -24,8 +26,9 @@ class WaveletWidthTests(unittest.TestCase):
                 layer = WaveletLayer(3, 4, weight_scale=1.0)
                 with torch.no_grad():
                     layer.raw_gamma.fill_(raw_width)
-                points = torch.tensor([[0.0, 0.0, 0.0], [1000.0, -1000.0, 1000.0]],
-                                      requires_grad=True)
+                points = torch.tensor(
+                    [[0.0, 0.0, 0.0], [1000.0, -1000.0, 1000.0]], requires_grad=True
+                )
                 output = layer(points)
                 self.assertTrue((layer.gamma > 0).all())
                 self.assertTrue(torch.isfinite(layer.gamma).all())
@@ -79,9 +82,12 @@ class WaveletWidthTests(unittest.TestCase):
             self.assertTrue((layer.gamma > 0).all())
             self.assertIsNotNone(layer.raw_gamma.grad)
             self.assertTrue(torch.isfinite(layer.raw_gamma.grad).all())
-        self.assertTrue(any(layer.raw_gamma.grad.abs().sum() > 0
-                            for layer in model.base_net.filters))
+        self.assertTrue(
+            any(
+                layer.raw_gamma.grad.abs().sum() > 0 for layer in model.base_net.filters
+            )
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

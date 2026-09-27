@@ -25,45 +25,74 @@ class TrainingStepTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
-    def run_training(self, name, total, resume=None, interrupt_after=None,
-                     first_step_render=False, scene_settings=None,
-                     save_key='save_path', save_directory=None, cli_args=()):
-        checkpoint_root = self.root / 'models' if save_directory is None else Path(save_directory)
+    def run_training(
+        self,
+        name,
+        total,
+        resume=None,
+        interrupt_after=None,
+        first_step_render=False,
+        scene_settings=None,
+        save_key="save_path",
+        save_directory=None,
+        cli_args=(),
+    ):
+        checkpoint_root = (
+            self.root / "models" if save_directory is None else Path(save_directory)
+        )
         config = {
-            'experiment_name': name,
-            'log_root': str(self.root / 'logs'),
+            "experiment_name": name,
+            "log_root": str(self.root / "logs"),
             save_key: str(checkpoint_root),
-            'num_iters': total,
-            'save_interval': 1,
-            'log_interval': 1,
-            'val_interval': 2,
-            'first_step_render': first_step_render,
-            'num_random_rays': 1,
+            "num_iters": total,
+            "save_interval": 1,
+            "log_interval": 1,
+            "val_interval": 2,
+            "first_step_render": first_step_render,
+            "num_random_rays": 1,
         }
         config.update(scene_settings or {})
         images = np.zeros((1, 1, 1, 3), dtype=np.float32)
         poses = np.eye(4, dtype=np.float32)[None]
-        split = SceneSplit(images, poses,
-                           np.array([[[1., 0., .5], [0., 1., .5], [0., 0., 1.]]], dtype=np.float32),
-                           np.array([[2., 6.]], dtype=np.float32), np.array([0]), ('./0',))
-        scene = SimpleNamespace(dataset_type='blender', white_background=True,
-                                sampling_bounds=(2., 6.), split=lambda name: split,
-                                images=images, poses=poses, intrinsics=split.intrinsics,
-                                splits={'train': np.array([0]), 'val': np.array([0])},
-                                describe_split=lambda name: split.describe(),
-                                describe=lambda: {'world_to_scene': np.eye(4).tolist(),
-                                                  'render_intrinsics': {'height': 1, 'width': 1,
-                                                                        'matrix': split.intrinsics[0].tolist()},
-                                                  'render_path': {'type': 'orbit', 'radius': 4., 'elevation': -30.}})
+        split = SceneSplit(
+            images,
+            poses,
+            np.array(
+                [[[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]]], dtype=np.float32
+            ),
+            np.array([[2.0, 6.0]], dtype=np.float32),
+            np.array([0]),
+            ("./0",),
+        )
+        scene = SimpleNamespace(
+            dataset_type="blender",
+            white_background=True,
+            sampling_bounds=(2.0, 6.0),
+            split=lambda name: split,
+            images=images,
+            poses=poses,
+            intrinsics=split.intrinsics,
+            splits={"train": np.array([0]), "val": np.array([0])},
+            describe_split=lambda name: split.describe(),
+            describe=lambda: {
+                "world_to_scene": np.eye(4).tolist(),
+                "render_intrinsics": {
+                    "height": 1,
+                    "width": 1,
+                    "matrix": split.intrinsics[0].tolist(),
+                },
+                "render_path": {"type": "orbit", "radius": 4.0, "elevation": -30.0},
+            },
+        )
         training_calls = 0
         scene_transforms = []
         loader_options, query_chunks = [], []
 
         def render(model, rays_o, rays_d, *args, **kwargs):
             nonlocal training_calls
-            scene_transforms.append(kwargs['scene_normalization'].to_dict())
-            query_chunks.append(kwargs['netchunk'])
-            if kwargs.get('stratified', True):
+            scene_transforms.append(kwargs["scene_normalization"].to_dict())
+            query_chunks.append(kwargs["netchunk"])
+            if kwargs.get("stratified", True):
                 if training_calls == interrupt_after:
                     raise KeyboardInterrupt
                 training_calls += 1
@@ -75,24 +104,34 @@ class TrainingStepTests(unittest.TestCase):
 
         def cpu_loader(*args, **kwargs):
             loader_options.append(kwargs)
-            return loader(*args, **{**kwargs, 'num_workers': 0})
+            return loader(*args, **{**kwargs, "num_workers": 0})
 
-        argv = ['train.py', '--config', 'unused.yaml']
+        argv = ["train.py", "--config", "unused.yaml"]
         argv += list(cli_args)
         if resume is not None:
-            argv += ['--resume', str(resume)]
+            argv += ["--resume", str(resume)]
         with contextlib.ExitStack() as stack:
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
-            stack.enter_context(patch('sys.argv', argv))
-            stack.enter_context(patch.object(train.torch.cuda, 'is_available', return_value=False))
-            stack.enter_context(patch.object(train, 'parse_config', return_value=config))
-            stack.enter_context(patch.object(train, 'load_configured_scene', return_value=scene))
-            stack.enter_context(patch.object(train, 'create_model', side_effect=lambda config: TinyModel()))
-            stack.enter_context(patch.object(train, 'DataLoader', cpu_loader))
-            stack.enter_context(patch.object(train, 'render_nerf', render))
-            stack.enter_context(patch('wavelet_nerf.rendering.render_nerf', render))
-            writer_factory = stack.enter_context(patch.object(train, 'SummaryWriter'))
-            progress = stack.enter_context(patch.object(train, 'tqdm'))
+            stack.enter_context(patch("sys.argv", argv))
+            stack.enter_context(
+                patch.object(train.torch.cuda, "is_available", return_value=False)
+            )
+            stack.enter_context(
+                patch.object(train, "parse_config", return_value=config)
+            )
+            stack.enter_context(
+                patch.object(train, "load_configured_scene", return_value=scene)
+            )
+            stack.enter_context(
+                patch.object(
+                    train, "create_model", side_effect=lambda config: TinyModel()
+                )
+            )
+            stack.enter_context(patch.object(train, "DataLoader", cpu_loader))
+            stack.enter_context(patch.object(train, "render_nerf", render))
+            stack.enter_context(patch("wavelet_nerf.rendering.render_nerf", render))
+            writer_factory = stack.enter_context(patch.object(train, "SummaryWriter"))
+            progress = stack.enter_context(patch.object(train, "tqdm"))
             train.main()
         return SimpleNamespace(
             folder=checkpoint_root / name,
@@ -106,106 +145,170 @@ class TrainingStepTests(unittest.TestCase):
         )
 
     def test_cli_overrides_runtime_settings_before_training(self):
-        with patch('torch.compile', side_effect=AssertionError('compilation must be disabled')):
+        with patch(
+            "torch.compile", side_effect=AssertionError("compilation must be disabled")
+        ):
             result = self.run_training(
-                'runtime', 1, scene_settings={'model_type': 'siren', 'device': 'cuda',
-                                               'compile_model': True, 'num_workers': 4},
-                cli_args=('--device', 'cpu', '--no-compile', '--num-workers', '0', '--netchunk', '3'),
+                "runtime",
+                1,
+                scene_settings={
+                    "model_type": "siren",
+                    "device": "cuda",
+                    "compile_model": True,
+                    "num_workers": 4,
+                },
+                cli_args=(
+                    "--device",
+                    "cpu",
+                    "--no-compile",
+                    "--num-workers",
+                    "0",
+                    "--netchunk",
+                    "3",
+                ),
             )
-        saved = self.checkpoint(result.folder / 'runtime_000001.pth', 1)
-        self.assertEqual(saved['experiment']['environment']['device'], 'cpu')
-        self.assertFalse(saved['experiment']['config']['compile_model'])
-        self.assertEqual(result.loader_options[0]['num_workers'], 0)
-        self.assertFalse(result.loader_options[0]['pin_memory'])
+        saved = self.checkpoint(result.folder / "runtime_000001.pth", 1)
+        self.assertEqual(saved["experiment"]["environment"]["device"], "cpu")
+        self.assertFalse(saved["experiment"]["config"]["compile_model"])
+        self.assertEqual(result.loader_options[0]["num_workers"], 0)
+        self.assertFalse(result.loader_options[0]["pin_memory"])
         self.assertTrue(all(chunk == 3 for chunk in result.query_chunks))
 
     def checkpoint(self, path, expected):
-        checkpoint = torch.load(path, map_location='cpu', weights_only=True)
-        self.assertEqual(checkpoint['format_version'], 3)
-        experiment = checkpoint['experiment']
-        self.assertEqual(experiment['config']['seed'], 42)
-        self.assertEqual(experiment['dataset']['scene_normalization'],
-                         checkpoint['scene_normalization'])
-        self.assertEqual(experiment['dataset']['splits']['train']['indices'], [0])
-        self.assertEqual(checkpoint['step'], expected)
-        self.assertEqual(checkpoint['scheduler_state_dict']['last_epoch'], expected)
-        for state in checkpoint['optimizer_state_dict']['state'].values():
-            self.assertEqual(int(state['step']), expected)
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        self.assertEqual(checkpoint["format_version"], 3)
+        experiment = checkpoint["experiment"]
+        self.assertEqual(experiment["config"]["seed"], 42)
+        self.assertEqual(
+            experiment["dataset"]["scene_normalization"],
+            checkpoint["scene_normalization"],
+        )
+        self.assertEqual(experiment["dataset"]["splits"]["train"]["indices"], [0])
+        self.assertEqual(checkpoint["step"], expected)
+        self.assertEqual(checkpoint["scheduler_state_dict"]["last_epoch"], expected)
+        for state in checkpoint["optimizer_state_dict"]["state"].values():
+            self.assertEqual(int(state["step"]), expected)
         return checkpoint
 
     def test_periodic_final_metrics_and_progress_count_completed_updates(self):
-        result = self.run_training('fresh', 3, first_step_render=True)
+        result = self.run_training("fresh", 3, first_step_render=True)
         self.assertEqual(result.training_calls, 3)
         for step in (1, 2, 3):
-            self.checkpoint(result.folder / f'fresh_{step:06d}.pth', step)
-        loss_steps = [call.args[2] for call in result.writer.add_scalar.call_args_list
-                      if call.args[0] == 'loss']
+            self.checkpoint(result.folder / f"fresh_{step:06d}.pth", step)
+        loss_steps = [
+            call.args[2]
+            for call in result.writer.add_scalar.call_args_list
+            if call.args[0] == "loss"
+        ]
         self.assertEqual(loss_steps, [1, 2, 3])
-        validation_steps = [call.args[2] for call in result.writer.add_scalar.call_args_list
-                            if call.args[0] == 'val/psnr']
+        validation_steps = [
+            call.args[2]
+            for call in result.writer.add_scalar.call_args_list
+            if call.args[0] == "val/psnr"
+        ]
         self.assertEqual(validation_steps, [1, 2])
         self.assertEqual(result.progress.update.call_args_list, [call(1)] * 3)
         result.writer.close.assert_called_once()
 
     def test_custom_checkpoint_root_save_and_resume(self):
-        for key in ('save_path',):
+        for key in ("save_path",):
             with self.subTest(key=key):
-                destination = self.root / f'custom_{key}'
+                destination = self.root / f"custom_{key}"
                 self.run_training(key, 1, save_key=key, save_directory=destination)
-                path = destination / key / f'{key}_000001.pth'
+                path = destination / key / f"{key}_000001.pth"
                 checkpoint = self.checkpoint(path, 1)
-                settings = checkpoint['experiment']['config']
-                self.assertEqual(settings['save_path'], str(destination))
-                self.assertNotIn('save_root', settings)
-                self.assertFalse((self.root / 'models' / key).exists())
-                resumed_root = self.root / f'relocated_{key}'
-                resumed = self.run_training(f'{key}_resumed', 2, resume=path,
-                                            save_key=key, save_directory=resumed_root)
-                self.checkpoint(resumed.folder / f'{key}_resumed_000002.pth', 2)
+                settings = checkpoint["experiment"]["config"]
+                self.assertEqual(settings["save_path"], str(destination))
+                self.assertNotIn("save_root", settings)
+                self.assertFalse((self.root / "models" / key).exists())
+                resumed_root = self.root / f"relocated_{key}"
+                resumed = self.run_training(
+                    f"{key}_resumed",
+                    2,
+                    resume=path,
+                    save_key=key,
+                    save_directory=resumed_root,
+                )
+                self.checkpoint(resumed.folder / f"{key}_resumed_000002.pth", 2)
 
     def test_resume_performs_only_remaining_updates(self):
-        original = self.run_training('original', 2)
-        result = self.run_training('resumed', 3, original.folder / 'original_000002.pth')
+        original = self.run_training("original", 2)
+        result = self.run_training(
+            "resumed", 3, original.folder / "original_000002.pth"
+        )
         self.assertEqual(result.training_calls, 1)
-        self.checkpoint(result.folder / 'resumed_000003.pth', 3)
-        self.assertEqual(result.writer_kwargs['purge_step'], 3)
+        self.checkpoint(result.folder / "resumed_000003.pth", 3)
+        self.assertEqual(result.writer_kwargs["purge_step"], 3)
 
     def test_training_validation_and_resume_use_saved_scene_coordinates(self):
-        expected = {'center': [1.0, -2.0, 3.0], 'scale': 4.0}
+        expected = {"center": [1.0, -2.0, 3.0], "scale": 4.0}
         original = self.run_training(
-            'scene', 2, first_step_render=True,
-            scene_settings={'model_type': 'siren', 'scene_center': [1.0, -2.0, 3.0], 'scene_scale': 4.0},
+            "scene",
+            2,
+            first_step_render=True,
+            scene_settings={
+                "model_type": "siren",
+                "scene_center": [1.0, -2.0, 3.0],
+                "scene_scale": 4.0,
+            },
         )
-        path = original.folder / 'scene_000002.pth'
-        self.assertEqual(self.checkpoint(path, 2)['scene_normalization'], expected)
+        path = original.folder / "scene_000002.pth"
+        self.assertEqual(self.checkpoint(path, 2)["scene_normalization"], expected)
         self.assertTrue(original.scene_transforms)
-        self.assertTrue(all(transform == expected for transform in original.scene_transforms))
-        resumed = self.run_training(
-            'scene_resumed', 4, path,
-            scene_settings={'model_type': 'siren', 'scene_center': [99.0, 99.0, 99.0], 'scene_scale': 100.0},
+        self.assertTrue(
+            all(transform == expected for transform in original.scene_transforms)
         )
-        self.assertTrue(all(transform == expected for transform in resumed.scene_transforms))
+        resumed = self.run_training(
+            "scene_resumed",
+            4,
+            path,
+            scene_settings={
+                "model_type": "siren",
+                "scene_center": [99.0, 99.0, 99.0],
+                "scene_scale": 100.0,
+            },
+        )
+        self.assertTrue(
+            all(transform == expected for transform in resumed.scene_transforms)
+        )
         self.assertEqual(
-            self.checkpoint(resumed.folder / 'scene_resumed_000004.pth', 4)['scene_normalization'],
+            self.checkpoint(resumed.folder / "scene_resumed_000004.pth", 4)[
+                "scene_normalization"
+            ],
             expected,
         )
 
-
-
     def test_interrupt_saves_only_completed_updates_and_resumes(self):
-        interrupted = self.run_training('interrupted', 4, interrupt_after=2)
-        path = interrupted.folder / 'interrupted_000002.pth'
+        interrupted = self.run_training("interrupted", 4, interrupt_after=2)
+        path = interrupted.folder / "interrupted_000002.pth"
         self.checkpoint(path, 2)
         interrupted.writer.close.assert_called_once()
-        result = self.run_training('continued', 4, path)
+        result = self.run_training("continued", 4, path)
         self.assertEqual(result.training_calls, 2)
-        self.checkpoint(result.folder / 'continued_000004.pth', 4)
+        self.checkpoint(result.folder / "continued_000004.pth", 4)
 
     def test_interrupt_before_first_update_saves_zero(self):
-        result = self.run_training('interrupted', 3, interrupt_after=0)
+        result = self.run_training("interrupted", 3, interrupt_after=0)
         self.assertEqual(result.training_calls, 0)
-        self.checkpoint(result.folder / 'interrupted_000000.pth', 0)
+        self.checkpoint(result.folder / "interrupted_000000.pth", 0)
+
+    def test_direct_interrupt_inside_optimizer_preserves_existing_checkpoints(self):
+        original = self.run_training("partial_update", 2)
+        paths = sorted(original.folder.glob("*.pth"))
+        previous = {path: path.read_bytes() for path in paths}
+        update = torch.Tensor.addcdiv_
+
+        def interrupt(parameter, *args, **kwargs):
+            update(parameter, *args, **kwargs)
+            raise KeyboardInterrupt
+
+        with patch.object(torch.Tensor, "addcdiv_", interrupt):
+            result = self.run_training("partial_update", 3, resume=paths[0])
+        self.assertEqual(sorted(result.folder.glob("*.pth")), paths)
+        for path, contents in previous.items():
+            self.assertEqual(path.read_bytes(), contents)
+        result.writer.close.assert_called_once()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

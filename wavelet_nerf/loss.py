@@ -17,7 +17,7 @@ def mse_to_psnr(mse: float) -> float:
     """
     values = np.asarray(mse, dtype=np.float64)
     if not np.isfinite(values).all() or (values < 0).any():
-        raise ValueError('MSE must be finite and nonnegative')
+        raise ValueError("MSE must be finite and nonnegative")
     result = np.full(values.shape, np.inf)
     positive = values > 0
     result[positive] = -10 * np.log10(values[positive])

@@ -34,7 +34,7 @@ def pose_spherical(theta, phi, radius):
 def _unit(vector):
     length = np.linalg.norm(vector)
     if not np.isfinite(length) or length < 1e-10:
-        raise ValueError('Camera orientation is degenerate')
+        raise ValueError("Camera orientation is degenerate")
     return vector / length
 
 
@@ -49,48 +49,63 @@ def view_pose(back, up, position):
 
 
 def average_pose(poses):
-    return view_pose(poses[:, :3, 2].sum(axis=0), poses[:, :3, 1].sum(axis=0),
-                     poses[:, :3, 3].mean(axis=0))
+    return view_pose(
+        poses[:, :3, 2].sum(axis=0),
+        poses[:, :3, 1].sum(axis=0),
+        poses[:, :3, 3].mean(axis=0),
+    )
 
 
 def configured_render_path(settings, config):
     """Apply optional trajectory controls without changing dataset cameras."""
     settings = dict(settings)
-    if settings['type'] == 'orbit':
-        controls = {'elevation': -30., 'radius': 4.}
-        prefix = 'render_orbit_'
-    elif settings['type'] == 'spiral':
-        controls = {'rotations': 2., 'zrate': .5, 'radius_scale': 1.}
-        prefix = 'render_spiral_'
+    if settings["type"] == "orbit":
+        controls = {"elevation": -30.0, "radius": 4.0}
+        prefix = "render_orbit_"
+    elif settings["type"] == "spiral":
+        controls = {"rotations": 2.0, "zrate": 0.5, "radius_scale": 1.0}
+        prefix = "render_spiral_"
     else:
-        raise ValueError(f'Unknown camera path type: {settings["type"]}')
+        raise ValueError(f"Unknown camera path type: {settings['type']}")
     for name, default in controls.items():
         settings[name] = float(config.get(prefix + name, settings.get(name, default)))
         if not np.isfinite(settings[name]):
-            raise ValueError(f'{prefix + name} must be finite')
-    if settings['type'] == 'orbit' and settings['radius'] <= 0:
-        raise ValueError('render_orbit_radius must be positive')
-    if settings['type'] == 'spiral' and (settings['rotations'] <= 0 or settings['radius_scale'] <= 0):
-        raise ValueError('Spiral rotations and radius scale must be positive')
+            raise ValueError(f"{prefix + name} must be finite")
+    if settings["type"] == "orbit" and settings["radius"] <= 0:
+        raise ValueError("render_orbit_radius must be positive")
+    if settings["type"] == "spiral" and (
+        settings["rotations"] <= 0 or settings["radius_scale"] <= 0
+    ):
+        raise ValueError("Spiral rotations and radius scale must be positive")
     return settings
 
 
 def render_camera_path(settings, count):
     """Generate orbit or LLFF spiral poses from serializable path settings."""
     if count < 1:
-        raise ValueError('Number of render poses must be positive')
-    if settings['type'] == 'orbit':
-        return np.stack([pose_spherical(angle, settings['elevation'], settings['radius'])
-                         for angle in np.linspace(-180, 180, count, endpoint=False)]).astype(np.float32)
-    if settings['type'] != 'spiral':
-        raise ValueError(f'Unknown camera path type: {settings["type"]}')
-    average = np.asarray(settings['average_pose'])
-    up = np.asarray(settings['up'])
-    radii = np.asarray(settings['radii']) * settings.get('radius_scale', 1.)
-    focus = average[:3, 3] - settings['focus_depth'] * average[:3, 2]
+        raise ValueError("Number of render poses must be positive")
+    if settings["type"] == "orbit":
+        return np.stack(
+            [
+                pose_spherical(angle, settings["elevation"], settings["radius"])
+                for angle in np.linspace(-180, 180, count, endpoint=False)
+            ]
+        ).astype(np.float32)
+    if settings["type"] != "spiral":
+        raise ValueError(f"Unknown camera path type: {settings['type']}")
+    average = np.asarray(settings["average_pose"])
+    up = np.asarray(settings["up"])
+    radii = np.asarray(settings["radii"]) * settings.get("radius_scale", 1.0)
+    focus = average[:3, 3] - settings["focus_depth"] * average[:3, 2]
     poses = []
-    for angle in np.linspace(0, 2 * np.pi * settings.get('rotations', 2), count, endpoint=False):
-        offset = radii * [np.cos(angle), -np.sin(angle), -np.sin(angle * settings.get('zrate', 0.5))]
+    for angle in np.linspace(
+        0, 2 * np.pi * settings.get("rotations", 2), count, endpoint=False
+    ):
+        offset = radii * [
+            np.cos(angle),
+            -np.sin(angle),
+            -np.sin(angle * settings.get("zrate", 0.5)),
+        ]
         position = average[:3, :3] @ offset + average[:3, 3]
         poses.append(view_pose(position - focus, up, position))
     return np.stack(poses).astype(np.float32)

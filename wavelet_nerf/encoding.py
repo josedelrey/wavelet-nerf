@@ -5,7 +5,7 @@ def positional_encoding(x: torch.Tensor, L: int) -> torch.Tensor:
     """
     Apply positional encoding to the input tensor (as in NeRF).
 
-    For each input dimension, this function appends sine and cosine functions 
+    For each input dimension, this function appends sine and cosine functions
     at exponentially increasing frequencies.
 
     Args:
@@ -19,7 +19,7 @@ def positional_encoding(x: torch.Tensor, L: int) -> torch.Tensor:
     """
     out = [x]
     for j in range(L):
-        out.append(torch.sin(2 ** j * x))
-        out.append(torch.cos(2 ** j * x))
-        
+        out.append(torch.sin(2**j * x))
+        out.append(torch.cos(2**j * x))
+
     return torch.cat(out, dim=1)
