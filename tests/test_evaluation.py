@@ -1,9 +1,11 @@
-from checkpoint_fixtures import dataset_metadata
+from checkpoint_fixtures import dataset_metadata, save_test_checkpoint
 import contextlib
 import csv
 import io
 import json
 import math
+import shutil
+import subprocess
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +14,7 @@ from unittest.mock import patch
 import imageio.v2 as imageio
 import numpy as np
 import torch
+import yaml
 
 import eval as evaluation
 from wavelet_nerf.experiment import resolve_experiment_config
@@ -24,6 +27,140 @@ class EvaluationTests(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
+
+    def test_latest_checkpoint_uses_numeric_steps_and_ignores_other_files(self):
+        directory = self.root / "models" / "example"
+        directory.mkdir(parents=True)
+        config = {"experiment_name": "example", "save_path": str(directory.parent)}
+        with self.assertRaisesRegex(FileNotFoundError, "train this experiment first"):
+            evaluation.latest_checkpoint(config)
+        for name in (
+            "example_9.pth",
+            "example_10.pth",
+            "example_bad.pth",
+            "other_99.pth",
+        ):
+            (directory / name).touch()
+        (directory / "example_100.pth").mkdir()
+        self.assertEqual(
+            evaluation.latest_checkpoint(config), directory / "example_10.pth"
+        )
+
+    def test_config_only_render_selects_latest_checkpoint_and_reference_outputs(self):
+        for kind in ("blender", "llff"):
+            with self.subTest(dataset=kind):
+                name = f"example_{kind}"
+                directory = self.root / "models" / name
+                directory.mkdir(parents=True)
+                config = resolve_experiment_config(
+                    {
+                        "experiment_name": name,
+                        "dataset_type": kind,
+                        "dataset_path": str(self.root / "missing_dataset"),
+                        "save_path": str(directory.parent),
+                        "log_root": str(self.root / "logs"),
+                        "hidden_dim": 8,
+                        "pos_encoding_dim": 2,
+                        "dir_encoding_dim": 1,
+                        "num_importance": 2,
+                        "num_samples_eval": 4,
+                        "num_render_poses": 2,
+                        "device": "cpu",
+                    }
+                )
+                model = NeRF(
+                    hidden_dim=8,
+                    pos_encoding_dim=2,
+                    dir_encoding_dim=1,
+                    num_importance=2,
+                )
+                optimizer = torch.optim.Adam(model.parameters())
+                scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+                metadata = dataset_metadata()
+                if kind == "llff":
+                    metadata["render_path"] = {
+                        "type": "spiral",
+                        "average_pose": np.eye(4).tolist(),
+                        "up": [0, 1, 0],
+                        "radii": [1, 1, 0.2],
+                        "focus_depth": 5,
+                        "rotations": 2,
+                        "zrate": 0.5,
+                    }
+                for step in (1, 2):
+                    checkpoint = save_test_checkpoint(
+                        step,
+                        model,
+                        optimizer,
+                        scheduler,
+                        directory,
+                        "nerf",
+                        name,
+                        experiment={"config": config, "dataset": metadata},
+                    )
+                path = self.root / f"{name}.yaml"
+                path.write_text(yaml.safe_dump(config))
+                output = self.root / "logs" / name / "renderonly_path_000002"
+                video = output.parent / f"{name}_spiral_000002_rgb.mp4"
+                with (
+                    patch("sys.argv", ["eval.py", "--config", str(path)]),
+                    patch.object(
+                        evaluation, "load_checkpoint", wraps=evaluation.load_checkpoint
+                    ) as load,
+                    patch.object(
+                        evaluation,
+                        "load_configured_scene",
+                        side_effect=AssertionError("dataset access"),
+                    ),
+                    patch.object(
+                        evaluation.shutil, "which", return_value="/usr/bin/ffmpeg"
+                    ),
+                    patch.object(evaluation, "write_video") as write_video,
+                    contextlib.redirect_stdout(io.StringIO()),
+                    contextlib.redirect_stderr(io.StringIO()),
+                ):
+                    evaluation.main()
+                    load.assert_called_once_with(Path(checkpoint))
+                    write_video.assert_called_once_with(
+                        output, "%03d.png", video, overwrite=False
+                    )
+                    self.assertTrue((output / "000.png").is_file())
+                    self.assertTrue((output / "001.png").is_file())
+                    with self.assertRaises(FileExistsError):
+                        evaluation.main()
+                    with patch(
+                        "sys.argv", ["eval.py", "--config", str(path), "--overwrite"]
+                    ):
+                        evaluation.main()
+                    self.assertTrue(write_video.call_args.kwargs["overwrite"])
+
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg unavailable")
+    def test_video_encodes_odd_sized_frames(self):
+        for index in range(2):
+            imageio.imwrite(
+                self.root / f"frame_{index:04d}.png",
+                np.full((3, 5, 3), index * 100, dtype=np.uint8),
+            )
+        video = self.root / "video.mp4"
+        evaluation.write_video(self.root, "frame_%04d.png", video)
+        self.assertGreater(video.stat().st_size, 0)
+        decoded = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(video),
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-",
+            ],
+            check=True,
+            capture_output=True,
+        )
+        self.assertEqual(len(decoded.stdout), 2 * 4 * 6 * 3)
 
     def test_known_psnr_and_invalid_images(self):
         target = np.zeros((2, 3, 3), dtype=np.float32)
@@ -103,7 +240,6 @@ class EvaluationTests(unittest.TestCase):
             }
         )
         model = NeRF(hidden_dim=8)
-        from checkpoint_fixtures import save_test_checkpoint
         from wavelet_nerf.experiment import experiment_metadata
 
         optimizer = torch.optim.Adam(model.parameters())

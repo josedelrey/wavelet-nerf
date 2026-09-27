@@ -361,6 +361,7 @@ class DatasetLoadingTests(unittest.TestCase):
                         "sys.argv",
                         [
                             "eval.py",
+                            "--no-video",
                             "--checkpoint",
                             str(checkpoint_path),
                             "--output",

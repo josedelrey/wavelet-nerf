@@ -4,6 +4,9 @@ import os
 import csv
 import json
 import math
+from pathlib import Path
+import shutil
+import subprocess
 import imageio
 from tqdm import tqdm
 
@@ -22,6 +25,53 @@ from wavelet_nerf.utils import load_checkpoint
 from wavelet_nerf.camera import configured_render_path, render_camera_path
 from wavelet_nerf.experiment import resolve_experiment_config
 from wavelet_nerf.run_state import configure_reproducibility, prepare_output
+
+
+def latest_checkpoint(config):
+    config = resolve_experiment_config(config, training=True)
+    name = config["experiment_name"]
+    directory = Path(config["save_path"]) / name
+    prefix = f"{name}_"
+    checkpoints = [
+        path
+        for path in directory.glob("*.pth")
+        if path.is_file()
+        and path.stem.startswith(prefix)
+        and path.stem[len(prefix) :].isdigit()
+    ]
+    if not checkpoints:
+        raise FileNotFoundError(
+            f"No checkpoints found in {directory}; train this experiment first"
+        )
+    return max(checkpoints, key=lambda path: int(path.stem[len(prefix) :]))
+
+
+def write_video(directory, pattern, destination, *, overwrite=False):
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y" if overwrite else "-n",
+            "-framerate",
+            "30",
+            "-start_number",
+            "0",
+            "-i",
+            str(Path(directory) / pattern),
+            "-vf",
+            "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-crf",
+            "18",
+            str(destination),
+        ],
+        check=True,
+    )
 
 
 def image_metrics(prediction, target):
@@ -84,13 +134,13 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        help="Optional YAML overrides for runtime and evaluation settings",
+        help="Experiment YAML; finds its latest checkpoint unless --checkpoint is given",
     )
     parser.add_argument(
-        "--checkpoint", type=str, required=True, help="Path to model checkpoint"
+        "--checkpoint", type=str, help="Use a specific checkpoint instead of the latest"
     )
     parser.add_argument(
-        "--output", type=str, default="rendered_frames", help="Path to output directory"
+        "--output", type=str, help="Output directory (default: under logs/<experiment>)"
     )
     parser.add_argument(
         "--mode",
@@ -105,16 +155,25 @@ def main():
     )
     add_runtime_arguments(parser)
     parser.add_argument(
+        "--no-video", action="store_true", help="Save PNG frames only; skip FFmpeg"
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="Replace generated frames and metrics in an existing output directory",
+        help="Replace generated frames, video and metrics",
     )
     args = parser.parse_args()
-    checkpoint = load_checkpoint(args.checkpoint)
+    if not args.config and not args.checkpoint:
+        parser.error("provide --config or --checkpoint")
     overrides = parse_config(args.config) if args.config else {}
     overrides.update(runtime_overrides(args))
     if args.dataset_path is not None:
         overrides["dataset_path"] = args.dataset_path
+    try:
+        model_path = args.checkpoint or latest_checkpoint(overrides)
+    except FileNotFoundError as error:
+        parser.error(str(error))
+    checkpoint = load_checkpoint(model_path)
     config = resolve_experiment_config(overrides, checkpoint)
     device = resolve_device(config["device"])
     print(f"Using device: {device}")
@@ -127,8 +186,25 @@ def main():
     dataset_path = config["dataset_path"]
     model_type = config["model_type"]
     reference_baseline = model_type == "nerf"
-    model_path = args.checkpoint
-    output_dir = args.output
+    automatic_output = args.output is None
+    if automatic_output:
+        name = config["experiment_name"]
+        run_dir = Path(config["log_root"]) / name
+        step = checkpoint["step"]
+        folder = "renderonly_path" if args.mode == "render" else "testset"
+        output_dir = run_dir / f"{folder}_{step:06d}"
+        video_path = run_dir / f"{name}_spiral_{step:06d}_rgb.mp4"
+    else:
+        output_dir = Path(args.output)
+        video_path = output_dir / "video.mp4"
+    make_video = args.mode == "render" and not args.no_video
+    if make_video:
+        if shutil.which("ffmpeg") is None:
+            parser.error(
+                "FFmpeg is required for video output; install it or use --no-video"
+            )
+        if video_path.exists() and not args.overwrite:
+            raise FileExistsError(f"{video_path} already exists; use --overwrite")
     near = float(config["near"])
     far = float(config["far"])
     scene_normalization = resolve_scene_normalization(config, checkpoint)
@@ -189,7 +265,14 @@ def main():
 
     prepare_output(
         output_dir,
-        ("frame_*.png", "test_*.png", "metrics.json", "metrics.csv"),
+        (
+            "frame_*.png",
+            "test_*.png",
+            "metrics.json",
+            "metrics.csv",
+            "video.mp4",
+            *(["[0-9][0-9][0-9]*.png"] if automatic_output else []),
+        ),
         overwrite=args.overwrite,
     )
 
@@ -252,8 +335,14 @@ def main():
 
         # Save frame as PNG
         prefix = "test" if args.mode == "test" else "frame"
-        frame_filename = os.path.join(output_dir, f"{prefix}_{i:04d}.png")
+        filename = f"{i:03d}.png" if automatic_output else f"{prefix}_{i:04d}.png"
+        frame_filename = os.path.join(output_dir, filename)
         imageio.imwrite(frame_filename, frame)
+
+    if make_video:
+        pattern = "%03d.png" if automatic_output else "frame_%04d.png"
+        write_video(output_dir, pattern, video_path, overwrite=args.overwrite)
+        print(f"Video saved to {video_path}")
 
     if args.mode == "test":
         summary = write_metrics(

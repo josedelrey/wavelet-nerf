@@ -186,6 +186,7 @@ class SceneNormalizationTests(unittest.TestCase):
                     "sys.argv",
                     [
                         "eval.py",
+                        "--no-video",
                         "--config",
                         "unused",
                         "--checkpoint",

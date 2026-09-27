@@ -132,6 +132,7 @@ class ExperimentMetadataTests(unittest.TestCase):
 
                 argv = [
                     "eval.py",
+                    "--no-video",
                     "--checkpoint",
                     str(path),
                     "--output",

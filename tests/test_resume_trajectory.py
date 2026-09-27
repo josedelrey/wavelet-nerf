@@ -266,6 +266,7 @@ class ResumeTrajectoryTests(unittest.TestCase):
             )
             argv = [
                 "eval.py",
+                "--no-video",
                 "--checkpoint",
                 str(checkpoint),
                 "--config",

@@ -661,26 +661,45 @@ not redownload the archive or run the full training budgets.
 
 ### Render a video
 
-Once you have trained a model, render frames with:
+Train and render with the same config:
+
+```bash
+uv run --locked python train.py --config configs/config_nerf_fern.yaml
+uv run --locked python eval.py --config configs/config_nerf_fern.yaml
 ```
+
+Evaluation selects the highest numbered checkpoint under
+`<save_path>/<experiment_name>/` and renders the saved camera path. Lego uses
+an orbit; Fern uses a spiral. After 200,000 updates, the Fern example produces:
+
+```text
+logs/nerf_fern_quickstart/
+├── renderonly_path_200000/
+│   ├── 000.png
+│   ├── 001.png
+│   └── ...
+└── nerf_fern_quickstart_spiral_200000_rgb.mp4
+```
+
+The directory and video names follow the original NeRF conventions. The step
+comes from the selected checkpoint; training and video rendering remain separate
+commands. The same workflow works with any supplied model/dataset config.
+
+FFmpeg with the `libx264` encoder must be on `PATH`. Videos use 30 fps, with
+padding to even dimensions for YUV 4:2:0. Add `--no-video` to save PNG frames
+without requiring FFmpeg, or `--overwrite` to replace an earlier render.
+
+You can still select a checkpoint and output directory explicitly:
+
+```bash
 uv run --locked python eval.py \
-  --mode render \
-  --config configs/config_nerf_lego.yaml \
-  --checkpoint ./models/nerf_lego/nerf_lego_250000.pth \
-  --output ./renders/nerf_lego_eval
+  --checkpoint models/nerf_lego/nerf_lego_250000.pth \
+  --output renders/nerf_lego_eval
 ```
 
-Then you can make a video with this ffmpeg command:
-```
-ffmpeg -y -framerate 30 -i ./renders/nerf_lego_eval/frame_%04d.png \
-  -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" \
-  -c:v libx264 -pix_fmt yuv420p -crf 18 ./renders/nerf_lego_eval.mp4
-```
-
-FFmpeg with the `libx264` encoder is required only for video conversion. Padding
-ensures even dimensions for YUV 4:2:0, including downsampled images. For Fern,
-use `./renders/nerf_fern_spiral/frame_%04d.png` as the input and choose a Fern
-output filename. `-y` replaces an existing video file.
+An explicit `--output` contains `frame_0000.png`, etc., and `video.mp4`.
+`--mode test` produces test images and metrics without encoding a video; its
+default directory is `logs/<experiment_name>/testset_<step>/`.
 
 ### TensorBoard
 
