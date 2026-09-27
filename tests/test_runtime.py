@@ -5,7 +5,7 @@ import torch
 
 from wavelet_nerf.configuration import normalize_config
 from wavelet_nerf.experiment import resolve_experiment_config
-from wavelet_nerf.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
+from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
 from wavelet_nerf.rendering import render_nerf
 from wavelet_nerf.runtime import prepare_model, resolve_device
 
@@ -64,7 +64,6 @@ class RuntimeTests(unittest.TestCase):
     def test_query_chunking_preserves_outputs_and_gradients_for_all_models(self):
         torch.manual_seed(7)
         models = [NeRF(hidden_dim=8, pos_encoding_dim=2, dir_encoding_dim=1, num_importance=2),
-                  LegacyNeRF(hidden_dim=8, pos_encoding_dim=2, dir_encoding_dim=1),
                   Siren(hidden_dim=8, num_layers=2),
                   WaveletNeRF(hidden_dim=8, num_layers=2, input_scale=2)]
         origins = torch.zeros(2, 3)

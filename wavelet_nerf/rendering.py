@@ -4,43 +4,9 @@ from torch import Tensor
 from typing import Tuple
 
 from wavelet_nerf.scene import SceneNormalization
-from wavelet_nerf.models import NeRF, LegacyNeRF
+from wavelet_nerf.models import NeRF
 from wavelet_nerf.nerf_reference import render_reference_nerf, sample_depths
 from wavelet_nerf.render_validation import validate_bounds, validate_count, validate_rays, validate_sampling_options
-
-
-def stratified_sampling(
-    near: float,
-    far: float,
-    num_bins: int,
-    device: str = 'cpu', *, num_rays: int | None = None,
-    dtype: torch.dtype = torch.float32) -> Tensor:
-    """
-    Perform stratified sampling within a given depth range.
-
-    Args:
-        near (float): Near bound of the sampling range.
-        far (float): Far bound of the sampling range.
-        num_bins (int): Number of samples.
-        device (str): Device for computation.
-
-    Returns:
-        Tensor: Stratified samples within [near, far].
-            Shape is [num_rays, num_bins] when num_rays is supplied; each ray
-            receives independent offsets. Otherwise returns one depth vector.
-    """
-    validate_bounds(near, far)
-    validate_count(num_bins, 'num_bins')
-    if num_rays is not None:
-        validate_count(num_rays, 'num_rays')
-    if dtype not in (torch.float32, torch.float64):
-        raise ValueError('Depth sampling requires float32 or float64 geometry')
-    bins = torch.linspace(near, far, num_bins + 1, device=device, dtype=dtype)
-    lower = bins[:-1]
-    upper = bins[1:]
-    shape = (num_bins,) if num_rays is None else (num_rays, num_bins)
-    random_offsets = torch.rand(shape, device=device, dtype=dtype)
-    return lower + (upper - lower) * random_offsets
 
 
 def generate_sample_positions(
@@ -48,8 +14,7 @@ def generate_sample_positions(
     rays_d_batch: Tensor,
     near: float,
     far: float,
-    num_samples: int,
-    device: str = 'cpu', reference: bool = True) -> Tuple[Tensor, Tensor]:
+    num_samples: int) -> Tuple[Tensor, Tensor]:
     """
     Generate stratified sample positions for a batch of rays and compute sample intervals.
 
@@ -59,7 +24,6 @@ def generate_sample_positions(
         near (float): Near bound for sampling.
         far (float): Far bound for sampling.
         num_samples (int): Number of samples per ray.
-        device (str): Computation device.
 
     Returns:
         Tuple[Tensor, Tensor]:
@@ -69,10 +33,8 @@ def generate_sample_positions(
     """
     validate_rays(rays_o_batch, rays_d_batch)
     validate_bounds(near, far)
-    validate_count(num_samples, 'num_samples', minimum=2 if reference else 1)
-    depths = (sample_depths(rays_d_batch, near, far, num_samples, perturb=True)
-              if reference else stratified_sampling(near, far, num_samples, rays_d_batch.device,
-                                                    num_rays=len(rays_d_batch), dtype=rays_d_batch.dtype))
+    validate_count(num_samples, 'num_samples', minimum=2)
+    depths = sample_depths(rays_d_batch, near, far, num_samples, perturb=True)
     deltas = torch.cat((depths[:, 1:] - depths[:, :-1],
                         torch.full_like(depths[:, :1], 1e10)), dim=-1)
     sample_positions = rays_o_batch[:, None] + depths[..., None] * rays_d_batch[:, None]
@@ -267,8 +229,7 @@ def render_nerf(
                 rays_d_chunk,
                 near,
                 far,
-                num_samples,
-                device, reference=not isinstance(ordinary_model, LegacyNeRF)
+                num_samples
             )
         else:
             # Uniform sampling: generate evenly spaced sample positions between near and far.

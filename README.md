@@ -177,13 +177,9 @@ changed. Numbers and booleans must be native YAML values, not quoted strings.
 Use `true`/`false` for all boolean fields and a three-number list for
 `scene_center`. Unknown keys, duplicate keys, malformed YAML, unsupported model
 options, invalid ranges and inconsistent bounds fail before data loading or
-output creation. Both commands use the same model factory and accept the legacy
-`multiscalewavelet` alias as `wavelet`.
+output creation. Both commands use the same model factory.
 
-Old `key = value` text config files are no longer accepted. Migrate their entries
-to `key: value` in a `.yaml` or `.yml` file, keeping existing experiment settings
-when resuming. Old checkpoint configs stored as strings are converted to native
-types automatically. New checkpoints store the resolved typed configuration.
+Configurations use `.yaml` or `.yml`. Checkpoints store the resolved typed configuration.
 
 Device and performance settings can be set in YAML:
 
@@ -349,7 +345,6 @@ Model checkpoints are saved in:
 `save_path: ./checkpoints` and `experiment_name: nerf_lego` save weights under
 `./checkpoints/nerf_lego/`. All example configs use scene-specific experiment
 names. Choose a distinct name for each new experiment to keep its outputs separate.
-Older configs using `save_root` remain supported as an alias for `save_path`.
 If both keys specify different directories, configuration loading fails with an
 error. Resumed runs can override the output directory using either key; saved
 checkpoint configs record only `save_path`.
@@ -416,8 +411,8 @@ checkpoint metadata and may be overridden using an `eval.py --config` file;
 they change novel render cameras, without changing training or test cameras.
 
 `--config` can override rendering sample count, chunk size and pose count; it
-rejects conflicting model settings or ray bounds. Legacy checkpoints still need
-the original config and warn that compatibility cannot be checked. New checkpoints also save Python, NumPy, Torch and CUDA RNG states and the
+rejects conflicting model settings or ray bounds. Checkpoints save Python,
+NumPy, Torch and CUDA RNG states and the
 committed pixel-sampler state. Interrupted forwards resume from the last
 completed update's random/sampling state. Validation uses separate randomness.
 For reproducible runs, set `seed: 42` (or another unsigned 32-bit integer) and
@@ -425,9 +420,14 @@ For reproducible runs, set `seed: 42` (or another unsigned 32-bit integer) and
 and disables cuDNN benchmarking; unsupported deterministic operations fail
 explicitly. The actual determinism/backend settings are recorded. Matching an
 uninterrupted trajectory requires the same data, execution settings, software
-and hardware; it is not guaranteed across devices or versions. Legacy
-checkpoints without RNG/sampling state warn that exact resume is unavailable.
+and hardware; it is not guaranteed across devices or versions.
 Dataset images are not embedded in checkpoints.
+
+Checkpoints use format version 3 and require canonical model weights, completed
+update counts, resolved configuration, explicit scene/camera/render-path metadata,
+optimizer and scheduler state, and RNG/sampler state. Loading validates this
+contract; only this format is supported. Compiled and ordinary models save the
+same canonical parameter names and can restore each other's checkpoints.
 
 ### Training and rendering memory
 
@@ -470,7 +470,7 @@ width/depth when the training batch itself exceeds available GPU memory.
 
 ### Reference NeRF baseline
 
-New `model_type: nerf` runs use `baseline_version: reference`, matching the
+`model_type: nerf` uses the reference architecture, matching the
 [original view-dependent MLP](https://github.com/bmild/nerf/blob/master/run_nerf_helpers.py):
 eight spatial ReLU layers, a skip after layer index 4, separate density and
 256-channel feature projections, and one view-dependent RGB hidden layer.
@@ -495,9 +495,7 @@ Bounds require finite `0 <= near < far`; inverse-depth sampling also requires
 `near > 0`. Coarse sample counts must be at least two (three for reference
 importance sampling), and ray/network chunk counts must be positive integers.
 
-Training depth jitter is independent for every ray, including legacy models.
-Legacy models retain their equal-width sampling bins but no longer share offsets
-across a chunk, so their stochastic training trajectory changes from older code.
+Training depth jitter is independent for every ray.
 Fixed seeds reproduce a fixed execution configuration; changing chunk sizes may
 change stochastic draws, particularly with CUDA and coarse/fine sampling.
 Deterministic evaluation is invariant to chunk boundaries within numerical
@@ -529,9 +527,7 @@ different settings from the published experiment.
 
 This is an algorithmic PyTorch translation, not a claim of bit-for-bit agreement
 with TensorFlow random streams or kernels, nor verified reproduction of paper
-scores. Existing nine-layer Softplus checkpoints automatically retain the
-`legacy` baseline and its renderer. They cannot be converted into reference
-coarse/fine weights: train a new experiment for reference comparisons.
+scores.
 
 ### Fern ray conventions
 
@@ -560,7 +556,7 @@ not converted into NDC weights.
 
 Scene coordinates are configured independently of ray sampling bounds. Set
 `scene_center: [x, y, z]` and a positive `scene_scale` (the half-extent of a
-world-space cube). SIREN, Wavelet and legacy NeRF networks receive
+world-space cube). SIREN and Wavelet networks receive
 `(position - scene_center) / scene_scale`. The SIREN and Wavelet Lego configs use
 center `(0, 0, 0)` and scale `2`, mapping the cube
 `[-2, 2]³` to `[-1, 1]³`. This is an explicit scene convention, not a fitted
@@ -570,12 +566,7 @@ other scenes. `near` and `far` only control sampling distances along world-space
 rays; ray directions, integration intervals, and density units are unchanged.
 
 Every training checkpoint saves its scene transform. Resume and evaluation use
-that saved transform even if the config's scene settings have changed. Older
-checkpoints without this metadata retain the previous near/far-based coordinate
-mapping with a warning; supply their original `near` and `far` values. Resaving
-them records that legacy transform explicitly. New normalization changes the
-coordinates learned by the networks, so retrain experiments before comparing
-results; resuming old weights does not convert them to the new convention.
+that saved transform. NeRF and LLFF use identity network normalization.
 
 To use other scenes from the **NeRF Synthetic dataset**, you can download all datasets from:
 
@@ -629,8 +620,7 @@ uv run --locked python eval.py --mode test \
   --output ./renders/nerf_fern_test
 ```
 
-New checkpoints restore their model settings automatically. For legacy checkpoints,
-also supply `--config config/config_nerf_lego.yaml`. Test evaluation requires the
+Checkpoints restore their model settings automatically. Test evaluation requires the
 dataset images; `--dataset-path` can relocate the dataset without changing model
 settings. Blender test frames follow JSON order; LLFF test frames follow the
 sorted image order and configured holdout interval. All use their actual poses,

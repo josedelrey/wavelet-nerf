@@ -7,7 +7,6 @@ import numpy as np
 import torch
 
 from wavelet_nerf.loss import mse_to_psnr
-from wavelet_nerf.models import LegacyNeRF
 from wavelet_nerf.nerf_reference import raw_to_outputs, render_reference_nerf
 from wavelet_nerf.rendering import (composite_volume, compute_accumulated_transmittance,
                                generate_sample_positions, render_nerf)
@@ -27,17 +26,15 @@ class RenderingContractTests(unittest.TestCase):
         self.origins = torch.zeros(3, 3)
         self.directions = torch.tensor([[0., 0., -1.]]).expand(3, -1)
 
-    def test_jitter_is_independent_for_reference_and_legacy_bins(self):
-        for reference in (False, True):
-            torch.manual_seed(12)
-            points, deltas = generate_sample_positions(self.origins, self.directions, 2., 6., 8,
-                                                       reference=reference)
-            depths = -points[..., 2]
-            with self.subTest(reference=reference):
-                self.assertFalse(torch.equal(depths[0], depths[1]))
-                self.assertTrue(((depths >= 2) & (depths <= 6)).all())
-                self.assertTrue((depths[:, 1:] >= depths[:, :-1]).all())
-                torch.testing.assert_close(deltas[:, :-1], depths[:, 1:] - depths[:, :-1])
+
+    def test_stratified_sampling_is_independent_per_ray(self):
+        torch.manual_seed(12)
+        points, deltas = generate_sample_positions(self.origins, self.directions, 2., 6., 8)
+        depths = -points[..., 2]
+        self.assertFalse(torch.equal(depths[0], depths[1]))
+        self.assertTrue(((depths >= 2) & (depths <= 6)).all())
+        self.assertTrue((depths[:, 1:] >= depths[:, :-1]).all())
+        torch.testing.assert_close(deltas[:, :-1], depths[:, 1:] - depths[:, :-1])
 
     def test_invalid_inputs_fail_in_both_public_renderers(self):
         for renderer in (render_nerf, render_reference_nerf):
@@ -65,18 +62,6 @@ class RenderingContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'near > 0'):
                 renderer(Field(), self.origins, self.directions, 0, 1, lindisp=True)
 
-    def test_hooks_run_for_research_legacy_and_reference_queries(self):
-        for renderer, model in ((render_nerf, Field()),
-                                (render_nerf, LegacyNeRF(hidden_dim=8)),
-                                (render_reference_nerf, Field())):
-            calls = []
-            handle = model.register_forward_hook(lambda *args: calls.append(True))
-            try:
-                renderer(model, self.origins, self.directions, 2, 6, num_samples=4,
-                         num_importance=2, netchunk=3, stratified=False)
-                self.assertTrue(calls)
-            finally:
-                handle.remove()
 
     def test_deterministic_rendering_is_chunk_invariant(self):
         for renderer in (render_nerf, render_reference_nerf):

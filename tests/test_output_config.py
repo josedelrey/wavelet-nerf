@@ -3,32 +3,15 @@ from pathlib import Path
 import unittest
 
 from wavelet_nerf.experiment import resolve_experiment_config
-from wavelet_nerf.utils import parse_config
+from wavelet_nerf.configuration import parse_config
 
 
 class OutputConfigTests(unittest.TestCase):
-    def test_conflicting_directory_names_fail(self):
-        with self.assertRaisesRegex(ValueError, 'save_root and save_path'):
-            resolve_experiment_config({'save_path': './one', 'save_root': './two'})
-        for key in ('save_path', 'save_root'):
-            with self.subTest(key=key), self.assertRaisesRegex(ValueError, 'nonempty'):
-                resolve_experiment_config({key: ''})
-        resolved = resolve_experiment_config({'save_path': './models', 'save_root': 'models/.'})
-        self.assertEqual(resolved['save_path'], './models')
-        self.assertNotIn('save_root', resolved)
-
-    def test_old_saved_settings_are_canonicalized_without_mutation(self):
-        for saved, expected in (
-            ({'save_root': './old'}, './old'),
-            ({'save_root': './ignored', 'save_path': './actual'}, './actual'),
-        ):
-            checkpoint = {'experiment': {'config': {'model_type': 'nerf', **saved}}}
-            restored = resolve_experiment_config({}, checkpoint)
-            self.assertEqual(restored['save_path'], expected)
-            self.assertNotIn('save_root', restored)
-            self.assertEqual(checkpoint['experiment']['config'], {'model_type': 'nerf', **saved})
-            moved = resolve_experiment_config({'save_root': './relocated'}, checkpoint)
-            self.assertEqual(moved['save_path'], './relocated')
+    def test_removed_alias_is_rejected_and_empty_path_fails(self):
+        with self.assertRaisesRegex(ValueError, 'Unknown configuration keys'):
+            resolve_experiment_config({'save_root': './models'})
+        with self.assertRaisesRegex(ValueError, 'nonempty'):
+            resolve_experiment_config({'save_path': ''})
 
     def test_example_configs_use_canonical_directory_and_distinct_scene_names(self):
         names = []

@@ -22,7 +22,7 @@ _COMMON = {
 _MODEL = {
     'nerf': {
         'pos_encoding_dim': 10, 'dir_encoding_dim': 4, 'hidden_dim': 256,
-        'baseline_version': 'reference', 'num_importance': 128,
+        'num_importance': 128,
         'perturb': 1.0, 'lindisp': False, 'raw_noise_std': 0.0,
         'white_background': True, 'no_batching': True, 'precrop_iters': 0,
         'precrop_frac': 0.5, 'half_res': False, 'testskip': 8,
@@ -38,7 +38,7 @@ _MODEL = {
     },
 }
 
-_EXTRA = {'model_type': 'nerf', 'experiment_name': '', 'save_root': '',
+_EXTRA = {'model_type': 'nerf', 'experiment_name': '',
           'scene_center': [0., 0., 0.], 'scene_scale': 1.,
           'render_orbit_elevation': -30., 'render_orbit_radius': 4.,
           'render_spiral_rotations': 2., 'render_spiral_zrate': .5,
@@ -92,8 +92,8 @@ _UniqueSafeLoader.add_implicit_resolver('tag:yaml.org,2002:float',
                                       list('-+0123456789.'))
 
 
-def normalize_config(config, *, legacy=False):
-    """Validate supplied fields; string coercion is reserved for old checkpoints."""
+def normalize_config(config):
+    """Validate native, typed configuration fields."""
     if not isinstance(config, dict) or any(not isinstance(key, str) for key in config):
         raise ValueError('Configuration must be a mapping with string keys')
     unknown = set(config) - _TYPES.keys()
@@ -105,22 +105,6 @@ def normalize_config(config, *, legacy=False):
         if key in ('near', 'far') and value == 'auto':
             result[key] = value
             continue
-        if legacy and isinstance(value, str) and expected is not str:
-            try:
-                if expected is bool:
-                    choices = {'true': True, 'false': False, '1': True, '0': False,
-                               'yes': True, 'no': False, 'on': True, 'off': False}
-                    value = choices[value.lower()]
-                elif expected is list:
-                    value = [float(item) for item in value.split(',')]
-                elif expected is int:
-                    if not re.fullmatch(r'[+-]?[0-9]+', value):
-                        raise ValueError('expected an integer')
-                    value = int(value)
-                else:
-                    value = float(value)
-            except (ValueError, KeyError) as error:
-                raise ValueError(f'Invalid legacy value for {key!r}: {original!r}') from error
         if expected is float:
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 raise ValueError(f'{key} must be a finite number')
@@ -147,20 +131,17 @@ def normalize_config(config, *, legacy=False):
             raise ValueError('seed must fit an unsigned 32-bit integer')
         if key in ('precrop_frac', 'lr_decay_factor') and not 0 < value <= 1:
             raise ValueError(f'{key} must lie in (0, 1]')
-        if key in ('dataset_path', 'save_path', 'save_root', 'log_root', 'experiment_name') and not value.strip():
+        if key in ('dataset_path', 'save_path', 'log_root', 'experiment_name') and not value.strip():
             raise ValueError(f'{key} must be a nonempty string')
         if key == 'experiment_name' and (value in ('.', '..') or '/' in value or '\\' in value):
             raise ValueError('experiment_name must be a single directory name')
-        if key in ('model_type', 'dataset_type', 'baseline_version'):
+        if key in ('model_type', 'dataset_type'):
             value = value.lower()
         if key == 'model_type':
-            value = {'multiscalewavelet': 'wavelet'}.get(value, value)
             if value not in _MODEL:
                 raise ValueError(f'Invalid model_type: {value!r}')
         if key == 'dataset_type' and value not in ('blender', 'llff'):
             raise ValueError('dataset_type must be blender or llff')
-        if key == 'baseline_version' and value not in ('reference', 'legacy'):
-            raise ValueError('baseline_version must be reference or legacy')
         if key == 'device' and not re.fullmatch(r'auto|cpu|cuda(?::[0-9]+)?', value):
             raise ValueError('device must be auto, cpu, cuda or cuda:<index>; MPS is not supported')
         result[key] = value
@@ -171,7 +152,7 @@ def parse_config(config_path):
     """Read one strict YAML mapping; files may contain partial evaluation overrides."""
     path = Path(config_path)
     if path.suffix.lower() not in ('.yaml', '.yml'):
-        raise ValueError('Configuration files must use YAML (.yaml or .yml); migrate old key=value files')
+        raise ValueError('Configuration files must use YAML (.yaml or .yml)')
     try:
         with path.open(encoding='utf-8') as file:
             config = yaml.load(file, Loader=_UniqueSafeLoader)
@@ -201,7 +182,9 @@ def validate_resolved_config(config, *, training=False):
             raise ValueError('LLFF NDC requires identity scene_center and scene_scale')
     if config['lr_min'] > config['learning_rate']:
         raise ValueError('lr_min cannot exceed learning_rate')
-    if config['model_type'] == 'nerf' and config['baseline_version'] == 'reference':
+    if config['model_type'] == 'nerf':
+        if config.get('scene_center', [0., 0., 0.]) != [0., 0., 0.] or config.get('scene_scale', 1.) != 1.:
+            raise ValueError('Reference NeRF requires identity scene_center and scene_scale')
         minimum = 3 if config['num_importance'] else 2
         if min(config['num_samples'], config['num_samples_eval']) < minimum:
             raise ValueError(f'Reference sampling needs at least {minimum} coarse samples')

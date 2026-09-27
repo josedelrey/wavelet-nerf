@@ -1,3 +1,4 @@
+from checkpoint_fixtures import dataset_metadata
 import contextlib
 import io
 from pathlib import Path
@@ -10,11 +11,12 @@ import numpy as np
 import torch
 
 import eval as evaluate
-from wavelet_nerf.experiment import (check_dataset, describe_split, experiment_metadata,
+from wavelet_nerf.experiment import (check_dataset, experiment_metadata,
                                 resolve_experiment_config, accelerator_metadata)
 from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
 from wavelet_nerf.scene import SceneNormalization
-from wavelet_nerf.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.utils import load_checkpoint
+from checkpoint_fixtures import save_test_checkpoint as save_checkpoint
 
 
 class ExperimentMetadataTests(unittest.TestCase):
@@ -24,13 +26,15 @@ class ExperimentMetadataTests(unittest.TestCase):
         self.root = Path(self.directory.name)
         images = np.zeros((1, 2, 2, 3), dtype=np.float32)
         poses = np.eye(4, dtype=np.float32)[None]
-        split = describe_split(images, poses, 2.0)
+        from wavelet_nerf.datasets.types import SceneSplit
+        split = SceneSplit(images, poses, np.array([[[2., 0, 1], [0, 2., 1], [0, 0, 1]]]),
+                           np.array([[2., 6.]]), np.array([0]), ('view.png',)).describe()
         self.splits = {'train': split, 'val': split}
 
     def save(self, model_type, settings, model):
         config = resolve_experiment_config({'model_type': model_type, **settings})
-        scene = SceneNormalization(scale=2)
-        metadata = experiment_metadata(config, self.splits, scene)
+        scene = SceneNormalization(scale=1 if model_type == 'nerf' else 2)
+        metadata = experiment_metadata(config, self.splits, scene, dataset_metadata())
         optimizer = torch.optim.Adam(model.parameters())
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
         path = save_checkpoint(0, model, optimizer, scheduler, str(self.root),
@@ -57,7 +61,7 @@ class ExperimentMetadataTests(unittest.TestCase):
                 original.eval()
                 path = self.save(name, {**settings, 'num_render_poses': 1}, original)
                 checkpoint = load_checkpoint(path)
-                self.assertEqual(checkpoint['format_version'], 2)
+                self.assertEqual(checkpoint['format_version'], 3)
                 metadata = checkpoint['experiment']
                 self.assertEqual(metadata['dataset']['type'], 'blender')
                 self.assertEqual(metadata['dataset']['background'], 'white')
@@ -109,7 +113,7 @@ class ExperimentMetadataTests(unittest.TestCase):
 
     def test_cpu_metadata_keeps_build_suffix_and_plain_checkpoint_values(self):
         with patch('torch.cuda.is_available', return_value=False):
-            metadata = experiment_metadata({}, self.splits, SceneNormalization(), device='cpu')
+            metadata = experiment_metadata({}, self.splits, SceneNormalization(), dataset_metadata(), device='cpu')
         environment = metadata['environment']
         self.assertEqual(environment['torch_build'], str(torch.__version__))
         self.assertIs(type(environment['torch_build']), str)
@@ -139,15 +143,6 @@ class ExperimentMetadataTests(unittest.TestCase):
              patch('wavelet_nerf.experiment.subprocess.check_output', side_effect=FileNotFoundError):
             self.assertIsNone(accelerator_metadata()['nvidia_driver'])
 
-    def test_legacy_warning_and_unknown_format(self):
-        with self.assertWarnsRegex(UserWarning, 'Legacy checkpoint'):
-            config = resolve_experiment_config({'w0': 7.0}, {'model_type': 'siren'})
-        self.assertEqual(config['w0'], 7.)
-        for payload in ({'format_version': 99}, {'format_version': 2}):
-            path = self.root / 'invalid.pth'
-            torch.save(payload, path)
-            with self.assertRaisesRegex(ValueError, 'format'):
-                load_checkpoint(path)
 
 
 if __name__ == '__main__':

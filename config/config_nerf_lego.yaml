@@ -79,7 +79,6 @@ num_samples_eval: 64  # Coarse samples; 128 fine samples are added
 # Model Type
 # --------------------
 model_type: "nerf"
-baseline_version: "reference"
 
 # --------------------
 # Model Hyperparameters

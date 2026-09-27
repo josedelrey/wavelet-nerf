@@ -51,7 +51,10 @@ class TrainingStepTests(unittest.TestCase):
                                 images=images, poses=poses, intrinsics=split.intrinsics,
                                 splits={'train': np.array([0]), 'val': np.array([0])},
                                 describe_split=lambda name: split.describe(),
-                                describe=lambda: {})
+                                describe=lambda: {'world_to_scene': np.eye(4).tolist(),
+                                                  'render_intrinsics': {'height': 1, 'width': 1,
+                                                                        'matrix': split.intrinsics[0].tolist()},
+                                                  'render_path': {'type': 'orbit', 'radius': 4., 'elevation': -30.}})
         training_calls = 0
         scene_transforms = []
         loader_options, query_chunks = [], []
@@ -118,14 +121,13 @@ class TrainingStepTests(unittest.TestCase):
 
     def checkpoint(self, path, expected):
         checkpoint = torch.load(path, map_location='cpu', weights_only=True)
-        self.assertEqual(checkpoint['format_version'], 2)
+        self.assertEqual(checkpoint['format_version'], 3)
         experiment = checkpoint['experiment']
         self.assertEqual(experiment['config']['seed'], 42)
         self.assertEqual(experiment['dataset']['scene_normalization'],
                          checkpoint['scene_normalization'])
         self.assertEqual(experiment['dataset']['splits']['train']['indices'], [0])
         self.assertEqual(checkpoint['step'], expected)
-        self.assertEqual(checkpoint['step_semantics'], 'completed_updates')
         self.assertEqual(checkpoint['scheduler_state_dict']['last_epoch'], expected)
         for state in checkpoint['optimizer_state_dict']['state'].values():
             self.assertEqual(int(state['step']), expected)
@@ -145,8 +147,8 @@ class TrainingStepTests(unittest.TestCase):
         self.assertEqual(result.progress.update.call_args_list, [call(1)] * 3)
         result.writer.close.assert_called_once()
 
-    def test_custom_checkpoint_root_and_legacy_alias_save_and_resume(self):
-        for key in ('save_path', 'save_root'):
+    def test_custom_checkpoint_root_save_and_resume(self):
+        for key in ('save_path',):
             with self.subTest(key=key):
                 destination = self.root / f'custom_{key}'
                 self.run_training(key, 1, save_key=key, save_directory=destination)
@@ -188,26 +190,7 @@ class TrainingStepTests(unittest.TestCase):
             expected,
         )
 
-    def test_legacy_periodic_checkpoint_uses_scheduler_update_count(self):
-        original = self.run_training('original', 3)
-        legacy = self.checkpoint(original.folder / 'original_000002.pth', 2)
-        legacy.pop('step_semantics')
-        legacy['step'] = 1  # Old periodic saves stored the zero-based loop index.
-        path = self.root / 'legacy.pth'
-        torch.save(legacy, path)
-        result = self.run_training('legacy_resumed', 3, path)
-        self.assertEqual(result.training_calls, 1)
-        self.checkpoint(result.folder / 'legacy_resumed_000003.pth', 3)
 
-    def test_legacy_final_checkpoint_does_not_add_an_update(self):
-        original = self.run_training('original', 3)
-        legacy = self.checkpoint(original.folder / 'original_000003.pth', 3)
-        legacy.pop('step_semantics')
-        path = self.root / 'legacy_final.pth'
-        torch.save(legacy, path)
-        result = self.run_training('finished', 3, path)
-        self.assertEqual(result.training_calls, 0)
-        self.checkpoint(result.folder / 'finished_000003.pth', 3)
 
     def test_interrupt_saves_only_completed_updates_and_resumes(self):
         interrupted = self.run_training('interrupted', 4, interrupt_after=2)

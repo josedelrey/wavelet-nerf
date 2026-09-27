@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from wavelet_nerf.data import CameraRayGenerator, PixelRaySampler, PixelBatchPlans, RayBatchDataset, camera_rays
 from wavelet_nerf.ndc import ndc_camera_rays
-from wavelet_nerf.models import NeRF, LegacyNeRF, Siren, WaveletNeRF
+from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
 from wavelet_nerf.rendering import render_camera, render_nerf
 
 
@@ -114,7 +114,7 @@ class MemoryPathTests(unittest.TestCase):
 
     def test_cpu_output_buffers_and_camera_chunks_match_normal_rendering(self):
         _, poses, matrices = self.cameras()
-        for constructor in (NeRF, LegacyNeRF, Siren, WaveletNeRF):
+        for constructor in (NeRF, Siren, WaveletNeRF):
             for kind in ('blender', 'llff'):
                 with self.subTest(model=constructor.__name__, dataset=kind):
                     torch.manual_seed(8)

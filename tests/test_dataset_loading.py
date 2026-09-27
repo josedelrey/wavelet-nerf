@@ -17,7 +17,8 @@ from wavelet_nerf.camera import render_camera_path
 from wavelet_nerf.data import camera_rays
 from wavelet_nerf.datasets import load_scene
 from wavelet_nerf.experiment import resolve_experiment_config
-from wavelet_nerf.utils import load_checkpoint, parse_config
+from wavelet_nerf.configuration import parse_config
+from wavelet_nerf.utils import load_checkpoint
 
 
 def llff_fixture(root, count=4, height=6, width=10):

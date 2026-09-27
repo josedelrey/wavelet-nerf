@@ -4,7 +4,8 @@ import unittest
 
 import torch
 
-from wavelet_nerf.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.utils import load_checkpoint
+from checkpoint_fixtures import save_test_checkpoint as save_checkpoint
 
 
 class CheckpointPortabilityTests(unittest.TestCase):
@@ -31,7 +32,7 @@ class CheckpointPortabilityTests(unittest.TestCase):
         optimizer.step()
         scheduler.step()
 
-    def round_trip(self, source_compiled, destination_compiled, legacy=False):
+    def round_trip(self, source_compiled, destination_compiled):
         source = self.model()
         optimizer = torch.optim.Adam(source.parameters(), lr=0.01)
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=0.9)
@@ -40,18 +41,12 @@ class CheckpointPortabilityTests(unittest.TestCase):
         self.update(source, optimizer, scheduler)
         path = save_checkpoint(1, source, optimizer, scheduler, self.root, 'test', 'run')
 
-        if legacy:
-            checkpoint = torch.load(path, map_location='cpu', weights_only=True)
-            checkpoint['model_state_dict'] = source.state_dict()
-            torch.save(checkpoint, path)
-        else:
-            checkpoint = torch.load(path, map_location='cpu', weights_only=True)
-            self.assertFalse(any(key.startswith('_orig_mod.')
-                                 for key in checkpoint['model_state_dict']))
+        checkpoint = torch.load(path, map_location='cpu', weights_only=True)
+        self.assertFalse(any(key.startswith('_orig_mod.') for key in checkpoint['model_state_dict']))
 
         checkpoint = load_checkpoint(path)
         self.assertEqual(checkpoint['step'], 1)
-        self.assertEqual(checkpoint['model_type'], 'test')
+        self.assertEqual(checkpoint['model_type'], 'nerf')
         destination = self.model()
         self.assertEqual(checkpoint['model_state_dict']._metadata,
                          destination.state_dict()._metadata)
@@ -83,14 +78,12 @@ class CheckpointPortabilityTests(unittest.TestCase):
                 with self.subTest(source=source_compiled, destination=destination_compiled):
                     self.round_trip(source_compiled, destination_compiled)
 
-    def test_legacy_compiled_checkpoints_work_with_both_destinations(self):
-        for destination_compiled in (False, True):
-            with self.subTest(destination=destination_compiled):
-                self.round_trip(True, destination_compiled, legacy=True)
 
     def test_incompatible_architecture_still_fails_strictly(self):
-        path = self.root / 'incompatible.pth'
-        torch.save({'model_state_dict': self.model().state_dict()}, path)
+        source = self.model()
+        optimizer = torch.optim.Adam(source.parameters())
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+        path = save_checkpoint(0, source, optimizer, scheduler, self.root, 'nerf', 'incompatible')
         checkpoint = load_checkpoint(path)
         with self.assertRaises(RuntimeError):
             torch.nn.Linear(3, 2).load_state_dict(checkpoint['model_state_dict'])

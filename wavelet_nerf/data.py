@@ -44,16 +44,6 @@ def resolve_sampling_bounds(config, scene):
     return near, far
 
 
-def load_dataset(dataset_path: str, mode: str = 'train', single_image: bool = False,
-                 *, white_background=True, half_res=False, testskip=1):
-    """Legacy Blender tuple adapter; new callers should use load_scene instead."""
-    split = load_scene(dataset_path, splits=(mode,), num_render_poses=1,
-                       white_background=white_background, factor=2 if half_res else 1,
-                       testskip=testskip).split(mode)
-    selection = slice(0, 1) if single_image else slice(None)
-    return split.images[selection], split.poses[selection], float(split.intrinsics[0, 0, 0])
-
-
 def camera_rays(height, width, c2w_matrices, intrinsics, *, normalize=True):
     """Generate unit world rays using per-camera pinhole intrinsics (+Y up, -Z forward)."""
     poses = np.asarray(c2w_matrices, dtype=np.float32)
@@ -61,10 +51,6 @@ def camera_rays(height, width, c2w_matrices, intrinsics, *, normalize=True):
         raise ValueError('Camera poses must be a nonempty N x 4 x 4 array')
     count = len(poses)
     matrices = np.asarray(intrinsics, dtype=np.float32)
-    if matrices.ndim == 0:
-        focal = float(matrices)
-        matrices = np.array([[focal, 0, width / 2], [0, focal, height / 2], [0, 0, 1]],
-                            dtype=np.float32)
     if matrices.shape == (3, 3):
         matrices = np.broadcast_to(matrices, (count, 3, 3))
     _validate_dimensions(height, width)
@@ -82,11 +68,11 @@ def camera_rays(height, width, c2w_matrices, intrinsics, *, normalize=True):
 
 
 def compute_rays(images: np.ndarray, c2w_matrices: np.ndarray,
-                 focal_length, *, normalize=True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute unit world rays and RGB targets; accept scalar or matrix intrinsics."""
+                 intrinsics, *, normalize=True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute unit world rays and RGB targets; use explicit matrix intrinsics."""
     validate_rgb_images(images)
     count, height, width, _ = images.shape
-    origins, directions = camera_rays(height, width, c2w_matrices, focal_length, normalize=normalize)
+    origins, directions = camera_rays(height, width, c2w_matrices, intrinsics, normalize=normalize)
     if len(origins) != count:
         raise ValueError(f'Image/pose count mismatch: {count} images, {len(origins)} poses')
     return origins, directions, images.reshape(count, -1, 3)
@@ -245,31 +231,3 @@ class PixelBatchPlans(Sampler):
 
     def __len__(self):
         return self.end - self.start
-
-
-class RayDataset(Dataset):
-    """
-    A PyTorch dataset for storing and accessing ray data.
-
-    This dataset class converts ray origins, ray directions, and target pixel colors from 
-    NumPy arrays to torch tensors. It flattens the input arrays to produce a dataset 
-    where each sample corresponds to a single ray along with its associated color.
-
-    Args:
-        rays_o (np.ndarray): Array of ray origins with shape (N, H*W, 3).
-        rays_d (np.ndarray): Array of ray directions with shape (N, H*W, 3).
-        target_pixels (np.ndarray): Array of target RGB pixel colors with shape (N, H*W, 3).
-    """
-    def __init__(self, rays_o, rays_d, target_pixels, view_directions=None):
-        self.rays_o = torch.from_numpy(rays_o.reshape(-1, 3)).float()
-        self.rays_d = torch.from_numpy(rays_d.reshape(-1, 3)).float()
-        self.target_pixels = torch.from_numpy(target_pixels.reshape(-1, 3)).float()
-        self.view_directions = (torch.from_numpy(view_directions.reshape(-1, 3)).float()
-                                if view_directions is not None else None)
-
-    def __len__(self):
-        return self.rays_o.shape[0]
-
-    def __getitem__(self, idx):
-        ray = self.rays_o[idx], self.rays_d[idx], self.target_pixels[idx]
-        return (*ray, self.view_directions[idx]) if self.view_directions is not None else ray

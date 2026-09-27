@@ -1,3 +1,4 @@
+from checkpoint_fixtures import dataset_metadata
 import contextlib
 import csv
 import io
@@ -74,14 +75,13 @@ class EvaluationTests(unittest.TestCase):
         config = resolve_experiment_config({'hidden_dim': 8, 'num_samples_eval': 4, 'chunk_size': 2,
                                             'dataset_path': 'missing_original_dataset'})
         model = NeRF(hidden_dim=8)
-        checkpoint = self.root / 'model.pth'
-        torch.save({
-            'model_state_dict': model.state_dict(), 'model_type': 'nerf',
-            'scene_normalization': SceneNormalization().to_dict(),
-            'experiment': {'config': config, 'dataset': {'splits': {'train': {'intrinsics': {
-                'height': 9, 'width': 9, 'fx': 999.0,
-            }}}}},
-        }, checkpoint)
+        from checkpoint_fixtures import save_test_checkpoint
+        from wavelet_nerf.experiment import experiment_metadata
+        optimizer = torch.optim.Adam(model.parameters())
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1)
+        metadata = experiment_metadata(config, {}, SceneNormalization(), dataset_metadata())
+        checkpoint = save_test_checkpoint(0, model, optimizer, scheduler, self.root, 'nerf', 'model',
+                                           experiment=metadata)
         seen = []
 
         def render(model, origins, directions, *args, **kwargs):

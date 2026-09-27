@@ -1,7 +1,6 @@
 import os
 import argparse
 import datetime
-import warnings
 import numpy as np
 import torch
 import torch.nn as nn
@@ -22,8 +21,9 @@ from wavelet_nerf.experiment import (resolve_experiment_config,
 from wavelet_nerf.run_state import (capture_rng, restore_rng,
                                configure_reproducibility, prepare_output, write_run_artifacts)
 from wavelet_nerf.loss import mse_to_psnr
-from wavelet_nerf.utils import parse_config, format_elapsed_time
-from wavelet_nerf.utils import load_checkpoint, save_checkpoint, log_training_metrics, get_checkpoint_step
+from wavelet_nerf.configuration import parse_config
+from wavelet_nerf.utils import format_elapsed_time
+from wavelet_nerf.utils import load_checkpoint, save_checkpoint, log_training_metrics
 
 
 def main():
@@ -93,7 +93,7 @@ def main():
                        overwrite=args.overwrite, resume=args.resume is not None)
 
     scene_normalization = resolve_scene_normalization(config, checkpoint)
-    reference_baseline = model_type == 'nerf' and config['baseline_version'] == 'reference'
+    reference_baseline = model_type == 'nerf'
     if reference_baseline:
         scene_normalization = SceneNormalization()
     config['scene_center'] = list(scene_normalization.center)
@@ -150,7 +150,7 @@ def main():
     sampler = PixelRaySampler(scene.images, scene.poses, scene.intrinsics,
                               image_indices=scene.splits['train'], dataset_type=scene.dataset_type,
                               normalize=not reference_baseline, seed=seed)
-    if checkpoint and checkpoint.get('training_state'):
+    if checkpoint is not None:
         sampler.load_state_dict(checkpoint['training_state']['sampler'])
 
     # Set up the optimizer and loss function
@@ -173,7 +173,7 @@ def main():
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        start_iter = get_checkpoint_step(checkpoint)
+        start_iter = checkpoint['step']
         print(f"Resuming training from iteration {start_iter}")
         writer_kwargs['purge_step'] = start_iter + 1
     if not 0 <= start_iter <= num_iters:
@@ -182,16 +182,13 @@ def main():
     # Restore before compilation, which keeps the optimizer's parameter objects.
     model = prepare_model(model, config, device)
 
-    if checkpoint and not checkpoint.get('training_state'):
-        warnings.warn('Checkpoint has no RNG/sampler state; resume cannot reproduce '
-                      'the uninterrupted trajectory', stacklevel=2)
     write_run_artifacts(log_dir, experiment, step=start_iter if checkpoint else None)
 
     # Track completed updates independently of the next iteration, including
     # interruption before the first update or during a later forward pass.
     completed_steps = start_iter
     # Training loop
-    boundary_rng = (checkpoint['training_state']['rng'] if checkpoint and checkpoint.get('training_state')
+    boundary_rng = (checkpoint['training_state']['rng'] if checkpoint is not None
                     else capture_rng())
 
     def training_state():
@@ -199,7 +196,7 @@ def main():
 
     writer = SummaryWriter(**writer_kwargs)
     try:
-        if checkpoint and checkpoint.get('training_state'):
+        if checkpoint is not None:
             restore_rng(checkpoint['training_state']['rng'])
         boundary_rng = capture_rng()
         writer.add_text('config', str(config))

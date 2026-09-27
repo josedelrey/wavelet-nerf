@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 import math
-import warnings
 
 
 @dataclass(frozen=True)
@@ -31,43 +30,12 @@ class SceneNormalization:
         return {'center': list(self.center), 'scale': self.scale}
 
 
-def _scene_center(config):
-    center = config.get('scene_center', [0., 0., 0.])
-    # Keep this public helper compatible with old checkpoint config dictionaries.
-    return tuple(float(value) for value in (center.split(',') if isinstance(center, str) else center))
-
-
 def resolve_scene_normalization(config, checkpoint=None):
-    """Use saved coordinates when restoring, or explicit scene settings for new runs."""
-    if config.get('dataset_type') == 'llff':
-        transform = (SceneNormalization(**checkpoint['scene_normalization'])
-                     if checkpoint is not None and 'scene_normalization' in checkpoint else
-                     SceneNormalization(
-                         center=_scene_center(config),
-                         scale=float(config.get('scene_scale', 1.0)),
-                     ))
-        if transform != SceneNormalization():
-            raise ValueError('Reference LLFF uses NDC coordinates directly: scene_center = 0, 0, 0; scene_scale = 1')
-        return transform
-    if checkpoint is not None:
-        if 'scene_normalization' in checkpoint:
-            return SceneNormalization(**checkpoint['scene_normalization'])
-
-        # Old networks learned this affine map. Preserve it rather than silently
-        # interpreting their weights in the new scene coordinate system.
-        near = float(config.get('near', 2.0))
-        far = float(config.get('far', 6.0))
-        if not math.isfinite(near) or not math.isfinite(far) or far <= near:
-            raise ValueError('Legacy checkpoint normalization requires finite near < far')
-        warnings.warn(
-            'Checkpoint has no scene normalization; preserving the legacy mapping '
-            'using near/far from the supplied config. These must match the original '
-            'training bounds. New experiments should be retrained with explicit '
-            'scene normalization.',
-            UserWarning,
-            stacklevel=2,
-        )
-        return SceneNormalization(center=((near + far) / 2,) * 3, scale=(far - near) / 2)
-
-    center = _scene_center(config)
-    return SceneNormalization(center=center, scale=float(config.get('scene_scale', 1.0)))
+    """Use explicit settings for new runs and saved coordinates for restored runs."""
+    transform = (SceneNormalization(**checkpoint['scene_normalization']) if checkpoint is not None
+                 else SceneNormalization(center=config.get('scene_center', [0., 0., 0.]),
+                                         scale=config.get('scene_scale', 1.0)))
+    if (config.get('dataset_type') == 'llff' or config.get('model_type') == 'nerf') \
+            and transform != SceneNormalization():
+        raise ValueError('NeRF and LLFF require identity scene normalization')
+    return transform

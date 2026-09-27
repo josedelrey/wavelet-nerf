@@ -23,7 +23,6 @@ num_render_poses: 120
 
 # Published settings from bmild/nerf/paper_configs/llff_config.txt
 model_type: "nerf"
-baseline_version: "reference"
 experiment_name: "nerf_fern_paper"
 num_iters: 200000
 learning_rate: 0.0005

@@ -9,12 +9,13 @@ import torch
 from PIL import Image
 
 from wavelet_nerf.data import camera_rays
-from wavelet_nerf.models import LegacyNeRF, NeRF, NeRFMLP
+from wavelet_nerf.models import NeRF, NeRFMLP
 from wavelet_nerf.nerf_reference import (KerasAdam, raw_to_outputs, render_reference_nerf,
                                     sample_depths, sample_pdf)
 from wavelet_nerf.experiment import resolve_experiment_config
 from wavelet_nerf.datasets.images import read_image
-from wavelet_nerf.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.utils import load_checkpoint
+from checkpoint_fixtures import save_test_checkpoint as save_checkpoint
 from wavelet_nerf.rendering import render_nerf
 
 
@@ -102,7 +103,7 @@ class ReferenceNeRFTests(unittest.TestCase):
     def test_camera_geometry_rays_are_not_normalized(self):
         pose = np.eye(4, dtype=np.float32)[None]
         pose[0, :3, 3] = [1, 2, 3]
-        origins, directions = camera_rays(2, 3, pose, 2., normalize=False)
+        origins, directions = camera_rays(2, 3, pose, np.array([[2., 0, 1.5], [0, 2., 1.], [0, 0, 1.]]), normalize=False)
         expected = [[(x - 1.5) / 2, -(y - 1.) / 2, -1.] for y in range(2) for x in range(3)]
         np.testing.assert_allclose(directions[0], expected)
         np.testing.assert_allclose(origins[0], np.tile([1, 2, 3], (6, 1)))
@@ -231,12 +232,6 @@ class ReferenceNeRFTests(unittest.TestCase):
             torch.testing.assert_close(actual, expected)
         self.assertEqual(restored_scheduler.state_dict(), scheduler.state_dict())
 
-    def test_legacy_checkpoint_is_detected_and_cannot_be_converted(self):
-        checkpoint = {'model_type': 'nerf', 'model_state_dict': LegacyNeRF(hidden_dim=8).state_dict(),
-                      'experiment': {'config': {'model_type': 'nerf', 'hidden_dim': 8}}}
-        self.assertEqual(resolve_experiment_config({}, checkpoint)['baseline_version'], 'legacy')
-        with self.assertRaises(ValueError):
-            resolve_experiment_config({'baseline_version': 'reference'}, checkpoint)
 
 
 if __name__ == '__main__':

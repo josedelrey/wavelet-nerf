@@ -10,7 +10,7 @@ import torch
 from wavelet_nerf.data import PixelRaySampler
 from wavelet_nerf.run_state import (atomic_write, capture_rng,
                                configure_reproducibility, prepare_output, restore_rng)
-from wavelet_nerf.utils import save_checkpoint
+from checkpoint_fixtures import save_test_checkpoint as save_checkpoint
 
 
 class RunStateTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 """One model constructor shared by training and evaluation."""
 from wavelet_nerf.configuration import validate_resolved_config
-from wavelet_nerf.models import LegacyNeRF, NeRF, Siren, WaveletNeRF
+from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
 
 
 def model_hyperparameters(config):
@@ -8,8 +8,7 @@ def model_hyperparameters(config):
     if model_type == 'nerf':
         keys = ('pos_encoding_dim', 'dir_encoding_dim', 'hidden_dim')
         result = {key: config[key] for key in keys}
-        if config['baseline_version'] == 'reference':
-            result['num_importance'] = config['num_importance']
+        result['num_importance'] = config['num_importance']
         return result
     if model_type == 'siren':
         return {**{key: config[key] for key in ('num_layers', 'sigma_mul', 'rgb_mul', 'w0', 'hidden_w0')},
@@ -24,7 +23,7 @@ def create_model(config):
     """Construct an ordinary model from validated, resolved experiment settings."""
     config = validate_resolved_config(config)
     if config['model_type'] == 'nerf':
-        constructor = NeRF if config['baseline_version'] == 'reference' else LegacyNeRF
+        constructor = NeRF
     else:
         constructor = {'siren': Siren, 'wavelet': WaveletNeRF}[config['model_type']]
     return constructor(**model_hyperparameters(config))

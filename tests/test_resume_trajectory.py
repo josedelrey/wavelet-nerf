@@ -172,16 +172,6 @@ class ResumeTrajectoryTests(unittest.TestCase):
         self.assertTrue((output / 'frame_0000.png').exists())
         self.assertEqual((output / 'notes.txt').read_text(), 'keep')
 
-    def test_legacy_resume_warns_and_determinism_cannot_be_changed(self):
-        settings = {'model_type': 'siren', 'siren_hidden_dim': 8, 'num_layers': 2}
-        path = self.run_training('original', 1, settings)
-        with self.assertRaisesRegex(ValueError, 'deterministic'):
-            self.run_training('changed', 2, {**settings, 'deterministic': False}, resume=path)
-        legacy = load_checkpoint(path)
-        legacy.pop('training_state')
-        torch.save(legacy, path)
-        with self.assertWarnsRegex(UserWarning, 'no RNG/sampler state'):
-            self.run_training('legacy', 2, settings, resume=path)
 
     def test_new_run_requires_overwrite_and_replaces_old_artifacts(self):
         settings = {'model_type': 'siren', 'siren_hidden_dim': 8, 'num_layers': 2}

@@ -16,7 +16,6 @@ htmlcov/
 /rendered_frames/
 /renders/
 /videos/
-/graveyard/
 
 # Local configuration
 .env

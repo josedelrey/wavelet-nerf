@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import torch
 
-from wavelet_nerf.data import RayDataset, camera_rays
+from wavelet_nerf.data import camera_rays
 from wavelet_nerf.experiment import resolve_experiment_config
 from wavelet_nerf.ndc import ndc_camera_rays, project_rays_ndc
 from wavelet_nerf.nerf_reference import render_reference_nerf
@@ -40,8 +40,8 @@ class NDCTests(unittest.TestCase):
 
     def test_camera_projection_preserves_world_viewing_directions(self):
         poses = np.eye(4, dtype=np.float32)[None]
-        origins, geometry, views = ndc_camera_rays(4, 6, poses, 3.0)
-        _, world = camera_rays(4, 6, poses, 3.0)
+        origins, geometry, views = ndc_camera_rays(4, 6, poses, np.array([[3., 0, 3.], [0, 3., 2.], [0, 0, 1.]]))
+        _, world = camera_rays(4, 6, poses, np.array([[3., 0, 3.], [0, 3., 2.], [0, 0, 1.]]))
         np.testing.assert_allclose(views, world)
         np.testing.assert_allclose(np.linalg.norm(views, axis=-1), 1, atol=1e-7)
         np.testing.assert_allclose(origins[0, 0], [-1, 1, -1], atol=1e-7)
@@ -49,16 +49,15 @@ class NDCTests(unittest.TestCase):
         self.assertFalse(np.allclose(np.linalg.norm(geometry, axis=-1), 1))
         np.testing.assert_allclose((origins + geometry)[..., 2], 1, atol=1e-7)
 
-    def test_per_camera_intrinsics_and_four_field_batches(self):
+    def test_per_camera_intrinsics_preserve_unit_viewing_directions(self):
         poses = np.tile(np.eye(4, dtype=np.float32), (2, 1, 1))
         matrices = np.array([[[3, 0, 3], [0, 2, 2], [0, 0, 1]],
                              [[4, 0, 3], [0, 5, 2], [0, 0, 1]]], dtype=np.float32)
         origins, geometry, views = ndc_camera_rays(4, 6, poses, matrices)
-        dataset = RayDataset(origins, geometry, np.zeros_like(origins), views)
-        self.assertEqual(len(dataset), 48)
-        self.assertEqual(len(dataset[0]), 4)
-        torch.testing.assert_close(dataset[24][3], torch.from_numpy(views[1, 0]))
-        self.assertEqual(len(RayDataset(origins, geometry, np.zeros_like(origins))[0]), 3)
+        self.assertEqual(origins.shape, (2, 24, 3))
+        self.assertTrue(np.isfinite(geometry).all())
+        np.testing.assert_allclose(np.linalg.norm(views, axis=-1), 1, atol=1e-7)
+        self.assertFalse(np.allclose(views[0, 0], views[1, 0]))
 
     def test_ndc_projection_handles_noncentral_principal_points(self):
         poses = np.eye(4, dtype=np.float32)[None]

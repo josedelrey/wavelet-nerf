@@ -42,10 +42,7 @@ def ndc_camera_rays(height, width, poses, intrinsics):
     """Return projected geometry rays and original unit world appearance directions."""
     origins, viewdirs = camera_rays(height, width, poses, intrinsics)
     matrices = np.asarray(intrinsics)
-    if matrices.ndim == 0:
-        fx = fy = float(matrices)
-        cx, cy = width / 2, height / 2
-    elif matrices.ndim == 2:
+    if matrices.ndim == 2:
         fx, fy = matrices[0, 0], matrices[1, 1]
         cx, cy = matrices[0, 2], matrices[1, 2]
     else:
@@ -53,14 +50,3 @@ def ndc_camera_rays(height, width, poses, intrinsics):
         cx, cy = matrices[:, 0, 2, None], matrices[:, 1, 2, None]
     origins, directions = project_rays_ndc(origins, viewdirs, height, width, fx, focal_y=fy, cx=cx, cy=cy)
     return origins, directions, viewdirs
-
-
-def compute_ndc_rays(images, poses, intrinsics, *, normalize=False):
-    """RayDataset adapter: NDC origins/directions, RGB targets, and world viewdirs.
-
-    Accept the world-ray adapter's ``normalize`` keyword for shared callers;
-    NDC geometry directions always retain their projected magnitude.
-    """
-    count, height, width = images.shape[:3]
-    origins, directions, viewdirs = ndc_camera_rays(height, width, poses, intrinsics)
-    return origins, directions, images.reshape(count, -1, 3), viewdirs

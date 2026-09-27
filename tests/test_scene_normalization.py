@@ -13,8 +13,10 @@ import torch
 import eval as evaluation
 from wavelet_nerf.models import NeRF, Siren, WaveletNeRF
 from wavelet_nerf.rendering import normalize_positions, query_model, render_nerf
+from wavelet_nerf.experiment import resolve_experiment_config
 from wavelet_nerf.scene import SceneNormalization, resolve_scene_normalization
-from wavelet_nerf.utils import load_checkpoint, save_checkpoint
+from wavelet_nerf.utils import load_checkpoint
+from checkpoint_fixtures import save_test_checkpoint as save_checkpoint
 
 
 class SceneNormalizationTests(unittest.TestCase):
@@ -58,13 +60,6 @@ class SceneNormalizationTests(unittest.TestCase):
         )
         self.assertEqual(restored, expected)
 
-    def test_legacy_checkpoint_mapping_is_preserved_with_warning(self):
-        with self.assertWarnsRegex(UserWarning, 'preserving the legacy mapping'):
-            transform = resolve_scene_normalization({'near': 2.0, 'far': 6.0}, {})
-        points = torch.tensor([[0.0, -1.0, 2.0], [3.0, 6.0, 8.0]])
-        torch.testing.assert_close(normalize_positions(points, transform), 2 * (points - 2) / 4 - 1)
-        with self.assertRaises(ValueError):
-            resolve_scene_normalization({'near': 6.0, 'far': 2.0}, {})
 
     def test_checkpoint_round_trip_preserves_network_inputs(self):
         model = NeRF(hidden_dim=8)
@@ -126,7 +121,11 @@ class SceneNormalizationTests(unittest.TestCase):
         transform = SceneNormalization(center=(1, -2, 3), scale=4)
         model = Siren(hidden_dim=8)
         checkpoint = {'model_type': 'siren', 'model_state_dict': model.state_dict(),
-                      'scene_normalization': transform.to_dict()}
+                      'scene_normalization': transform.to_dict(),
+                      'experiment': {'config': resolve_experiment_config({'model_type': 'siren', 'siren_hidden_dim': 8}),
+                                     'dataset': {'render_intrinsics': {'height': 1, 'width': 1,
+                                                                      'matrix': [[1., 0, .5], [0, 1., .5], [0, 0, 1.]]},
+                                                 'render_path': {'type': 'orbit', 'radius': 4., 'elevation': -30.}}}}
         with tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
             config = {'siren_hidden_dim': 8, 'num_render_poses': 1,
                       'scene_center': [99.0, 99.0, 99.0], 'scene_scale': 100.0}

@@ -27,7 +27,8 @@ def main():
         parser.error('--factor must be positive')
     repository = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repository))
-    from wavelet_nerf.utils import load_checkpoint, parse_config
+    from wavelet_nerf.configuration import parse_config
+    from wavelet_nerf.utils import load_checkpoint
 
     for scene in ('lego', 'fern'):
         if not (repository / 'datasets' / scene).is_dir():

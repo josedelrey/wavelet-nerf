@@ -6,7 +6,6 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import torch
 import yaml
 
 import eval as evaluation
@@ -14,7 +13,7 @@ import train
 from wavelet_nerf.configuration import parse_config
 from wavelet_nerf.experiment import resolve_experiment_config
 from wavelet_nerf.model_factory import create_model
-from wavelet_nerf.models import LegacyNeRF, WaveletNeRF
+from wavelet_nerf.models import WaveletNeRF
 
 
 class ConfigurationTests(unittest.TestCase):
@@ -151,28 +150,17 @@ dataset_path: "./data/#scene=lego"
             loader.assert_not_called()
         self.assertFalse(output.exists())
 
-    def test_shared_factory_accepts_alias_and_legacy_checkpoint_types(self):
-        config = resolve_experiment_config({'model_type': 'multiscalewavelet', 'wave_hidden_dim': 8,
-                                            'wave_num_layers': 2, 'normalized': False, 'omega0': 11})
-        model = create_model(config)
-        self.assertIsInstance(model, WaveletNeRF)
-        self.assertEqual(config['model_type'], 'wavelet')
+    def test_shared_factory_and_removed_config_fields(self):
         self.assertIs(train.create_model, evaluation.create_model)
-        legacy = LegacyNeRF(hidden_dim=8)
-        checkpoint = {'model_type': 'nerf', 'model_state_dict': legacy.state_dict(),
-                      'experiment': {'config': {'model_type': 'nerf', 'hidden_dim': '8',
-                                                'half_res': 'false', 'learning_rate': '0.0005',
-                                                'scene_center': '0, 0, 0', 'num_iters': '10'}}}
-        restored = resolve_experiment_config({}, checkpoint)
-        self.assertEqual(restored['hidden_dim'], 8)
-        self.assertIs(restored['half_res'], False)
-        self.assertEqual(restored['scene_center'], [0., 0., 0.])
-        restored_model = create_model(restored)
-        self.assertIsInstance(restored_model, LegacyNeRF)
-        restored_model.load_state_dict(checkpoint['model_state_dict'])
-        points, directions = torch.randn(2, 3), torch.randn(2, 3)
-        for actual, expected in zip(restored_model(points, directions), legacy(points, directions)):
-            torch.testing.assert_close(actual, expected)
+        config = resolve_experiment_config({'model_type': 'wavelet', 'wave_hidden_dim': 8,
+                                            'wave_num_layers': 2, 'normalized': False})
+        self.assertIsInstance(create_model(config), WaveletNeRF)
+        for overrides in ({'model_type': 'multiscalewavelet'}, {'save_root': './models'},
+                          {'baseline_version': 'reference'}, {'hidden_dim': '8'},
+                          {'scene_center': '0, 0, 0'}):
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                resolve_experiment_config(overrides)
+
 
 
 if __name__ == '__main__':

@@ -12,7 +12,8 @@ from wavelet_nerf.model_factory import create_model
 from wavelet_nerf.rendering import render_camera
 from wavelet_nerf.runtime import add_runtime_arguments, runtime_overrides, resolve_device, prepare_model
 from wavelet_nerf.scene import SceneNormalization, resolve_scene_normalization
-from wavelet_nerf.utils import load_checkpoint, parse_config
+from wavelet_nerf.configuration import parse_config
+from wavelet_nerf.utils import load_checkpoint
 from wavelet_nerf.camera import configured_render_path, render_camera_path
 from wavelet_nerf.experiment import resolve_experiment_config
 from wavelet_nerf.run_state import configure_reproducibility, prepare_output
@@ -66,7 +67,7 @@ def main():
         description="Evaluate test views or render a novel-view trajectory."
     )
     parser.add_argument('--config', type=str,
-                        help='YAML overrides; required for legacy checkpoints')
+                        help='Optional YAML overrides for runtime and evaluation settings')
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Path to model checkpoint')
     parser.add_argument('--output', type=str, default='rendered_frames',
@@ -80,8 +81,6 @@ def main():
                         help='Replace generated frames and metrics in an existing output directory')
     args = parser.parse_args()
     checkpoint = load_checkpoint(args.checkpoint)
-    if args.config is None and 'experiment' not in checkpoint:
-        parser.error('--config is required for legacy checkpoints')
     overrides = parse_config(args.config) if args.config else {}
     overrides.update(runtime_overrides(args))
     if args.dataset_path is not None:
@@ -97,7 +96,7 @@ def main():
     # Parameters
     dataset_path = config['dataset_path']
     model_type = config['model_type']
-    reference_baseline = model_type == 'nerf' and config['baseline_version'] == 'reference'
+    reference_baseline = model_type == 'nerf'
     model_path = args.checkpoint
     output_dir = args.output
     near = float(config['near'])
@@ -136,38 +135,22 @@ def main():
     model = prepare_model(model, config, device)
     
     # Test views use loaded cameras. Novel paths can render solely from saved metadata.
-    dataset_metadata = checkpoint.get('experiment', {}).get('dataset', {})
+    dataset_metadata = checkpoint['experiment']['dataset']
     white_background = config['white_background']
     if args.mode == 'test':
-        scene = load_configured_scene({**config, 'testskip': '1'}, splits=('test',))
+        scene = load_configured_scene({**config, 'testskip': 1}, splits=('test',))
         split = scene.split('test')
         images, render_poses, intrinsics = split.images, split.poses, split.intrinsics
         image_paths, source_indices = split.frame_paths, split.indices
         height, width = images.shape[1:3]
-        if 'world_to_scene' in dataset_metadata and not np.allclose(
+        if not np.allclose(
                 scene.world_to_scene, dataset_metadata['world_to_scene']):
             raise ValueError('Evaluation scene preprocessing differs from the saved experiment')
-    elif 'experiment' in checkpoint:
-        camera = dataset_metadata.get('render_intrinsics')
-        if camera is None:
-            # Checkpoints written before explicit scene metadata stored one camera.
-            camera = dataset_metadata['splits']['train']['intrinsics']
-            camera = {**camera, 'matrix': [[camera['fx'], 0, camera.get('cx', camera['width'] / 2)],
-                                         [0, camera.get('fy', camera['fx']), camera.get('cy', camera['height'] / 2)],
-                                         [0, 0, 1]]}
+    else:
+        camera = dataset_metadata['render_intrinsics']
         height, width = camera['height'], camera['width']
         intrinsics = np.asarray(camera['matrix'], dtype=np.float32)[None]
-        path_settings = dataset_metadata.get('render_path')
-        if path_settings is None:
-            if config['dataset_type'] == 'llff':
-                raise ValueError('LLFF checkpoint is missing saved spiral settings; '
-                                 'use a checkpoint with scene/render-path metadata')
-            path_settings = {'type': 'orbit', 'elevation': -30., 'radius': 4.}
-    else:
-        scene = load_configured_scene(config, splits=('test',))
-        height, width = scene.images.shape[1:3]
-        intrinsics = scene.intrinsics[:1]
-        path_settings = scene.render_path
+        path_settings = dataset_metadata['render_path']
     if args.mode == 'render':
         render_poses = render_camera_path(configured_render_path(path_settings, config), num_render_poses)
 
@@ -231,7 +214,6 @@ def main():
             'num_samples': num_samples, 'chunk_size': chunk_size,
             'near': near, 'far': far, 'scene_normalization': scene_normalization.to_dict(),
             'seed': seed,
-            'baseline_version': config.get('baseline_version'),
             'num_importance': int(config['num_importance']) if reference_baseline else 0,
         })
         print(f"Test views: {summary['num_images']}; mean PSNR: {summary['mean_psnr_db']:.4f} dB; "

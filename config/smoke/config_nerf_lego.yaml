@@ -1,7 +1,6 @@
 # Two-update CPU execution check; not a quality benchmark.
 experiment_name: nerf_lego_smoke
 model_type: nerf
-baseline_version: reference
 dataset_type: blender
 dataset_path: ./datasets/lego
 dataset_factor: 32
