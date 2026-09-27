@@ -309,6 +309,10 @@ def validate_resolved_config(config, *, training=False):
     if not near < far or (config["dataset_type"] == "blender" and near <= 0):
         raise ValueError("Bounds require near < far, with near > 0 for Blender")
     if config["dataset_type"] == "llff":
+        if config["half_res"]:
+            raise ValueError(
+                "half_res is only supported for Blender; use dataset_factor for LLFF"
+            )
         if (near, far) != (0.0, 1.0):
             raise ValueError("LLFF NDC requires near = 0 and far = 1")
         if config.get("lindisp", False) or config["white_background"]:
@@ -339,4 +343,8 @@ def validate_resolved_config(config, *, training=False):
             raise ValueError(
                 "Reference NeRF uses exponential decay without an lr_min floor; set lr_min = 0"
             )
+    elif min(config["num_samples"], config["num_samples_eval"]) < 2:
+        raise ValueError(
+            "SIREN and Wavelet require num_samples and num_samples_eval to be at least 2"
+        )
     return config

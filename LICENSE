@@ -692,7 +692,7 @@ architecture. The full AGPL version 3 license text appears above.
 
 Images and external datasets
 
-imgs/pipeline.jpg is the NeRF pipeline figure from Mildenhall et al.,
+assets/pipeline.jpg is the NeRF pipeline figure from Mildenhall et al.,
 "NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis"
 (ECCV 2020), obtained from the original NeRF repository:
 https://github.com/bmild/nerf/blob/master/imgs/pipeline.jpg
@@ -701,7 +701,7 @@ Credit remains with the original authors. This project does not relicense
 that figure under the AGPL or claim ownership of it. Consult the original
 source and applicable rights-holder terms before redistributing it.
 
-imgs/nerf_lego.gif is a render created by José del Rey using this repository
+assets/nerf_lego.gif is a render created by José del Rey using this repository
 and the Lego scene from the NeRF Synthetic dataset. Project-authored
 contributions to the GIF are offered under AGPL-3.0-only; rights in the
 underlying scene assets are not changed by this grant.

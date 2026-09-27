@@ -130,16 +130,6 @@ Test outputs are saved to `logs/<experiment_name>/testset_<step>/`, including
 - [SIREN](https://arxiv.org/abs/2006.09661), Sitzmann et al., NeurIPS 2020.
 - [Multiplicative Filter Networks](https://arxiv.org/abs/2011.13961), Fathony et al., ICLR 2021.
 
-```bibtex
-@inproceedings{mildenhall2020nerf,
-  title={NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis},
-  author={Mildenhall, Ben and Srinivasan, Pratul P. and Tancik, Matthew
-          and Barron, Jonathan T. and Ramamoorthi, Ravi and Ng, Ren},
-  booktitle={ECCV},
-  year={2020}
-}
-```
-
 ## License
 
 Licensed under [AGPL-3.0-only](LICENSE). The MFN and SIREN layers draw on the

@@ -201,6 +201,79 @@ dataset_path: "./data/#scene=lego"
             self.assertFalse((self.root / "models").exists())
             self.assertFalse((self.root / "logs").exists())
 
+    def test_siren_and_wavelet_accept_two_samples(self):
+        for model in ("siren", "wavelet"):
+            with self.subTest(model=model):
+                resolve_experiment_config(
+                    {
+                        "model_type": model,
+                        "experiment_name": "run",
+                        "num_samples": 2,
+                        "num_samples_eval": 2,
+                    },
+                    training=True,
+                )
+
+    def test_invalid_sampling_and_llff_half_res_preserve_outputs_on_overwrite(self):
+        cases = [
+            (model, "blender", {field: 1}, "at least 2")
+            for model in ("siren", "wavelet")
+            for field in ("num_samples", "num_samples_eval")
+        ] + [
+            (model, "llff", {"half_res": True}, "half_res")
+            for model in ("nerf", "siren", "wavelet")
+        ]
+        sentinels = (
+            self.root / "logs" / "run" / "events.out.tfevents.old",
+            self.root / "models" / "run" / "run_000001.pth",
+            self.root / "renders" / "frame_0000.png",
+        )
+        for path in sentinels:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"previous output")
+        config_path = self.root / "invalid.yaml"
+        for model, dataset, overrides, error in cases:
+            settings = resolve_experiment_config(
+                {
+                    "model_type": model,
+                    "dataset_type": dataset,
+                    "experiment_name": "run",
+                    "log_root": str(self.root / "logs"),
+                    "save_path": str(self.root / "models"),
+                }
+            )
+            config_path.write_text(yaml.safe_dump({**settings, **overrides}))
+            for entrypoint in (train, evaluation):
+                argv = [
+                    entrypoint.__name__,
+                    "--config",
+                    str(config_path),
+                    "--overwrite",
+                ]
+                if entrypoint is evaluation:
+                    argv += [
+                        "--checkpoint",
+                        "unused",
+                        "--output",
+                        str(self.root / "renders"),
+                    ]
+                with (
+                    self.subTest(model=model, overrides=overrides, command=argv[0]),
+                    patch("sys.argv", argv),
+                    patch.object(
+                        entrypoint,
+                        "load_checkpoint",
+                        return_value={"experiment": {"config": settings}},
+                    ),
+                    patch.object(entrypoint, "load_configured_scene") as loader,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    with self.assertRaisesRegex(ValueError, error):
+                        entrypoint.main()
+                    loader.assert_not_called()
+                    for path in sentinels:
+                        self.assertEqual(path.read_bytes(), b"previous output")
+
     def test_invalid_evaluation_overrides_precede_data_and_output_creation(self):
         settings = resolve_experiment_config({"experiment_name": "run"})
         checkpoint = {"experiment": {"config": settings}}
