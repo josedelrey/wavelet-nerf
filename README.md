@@ -1,13 +1,20 @@
 # Wavelet-NeRF
 
-![NeRF pipeline](assets/pipeline.jpg)
+[![CI](https://github.com/josedelrey/wavelet-nerf/actions/workflows/ci.yml/badge.svg)](https://github.com/josedelrey/wavelet-nerf/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-22A559)](LICENSE)
 
 PyTorch experiments for novel-view synthesis with NeRF, SIREN, and wavelet
 multiplicative filter networks. Includes the synthetic Lego and LLFF Fern scenes.
 
-| | |
-|:---:|:---:|
-| ![](assets/lego.gif) | ![](assets/fern.gif) |
+![NeRF pipeline](assets/pipeline.jpg)
+
+> A neural radiance field represents a scene as a network trained to reproduce
+> its input views. It maps a 3D position and viewing direction to color and
+> density. Volume rendering combines these predictions along camera rays to
+> form an image, allowing the network to learn from photographs and render
+> new views of the same scene.
 
 ## Model variants
 
@@ -24,6 +31,10 @@ camera rays, then use volume rendering to reconstruct the training images.
 
 In every model, density depends only on position. The color branch also receives
 encoded viewing directions so appearance can change with the camera angle.
+
+| | |
+|:---:|:---:|
+| ![](assets/lego.gif) | ![](assets/fern.gif) |
 
 ## Installation
 
