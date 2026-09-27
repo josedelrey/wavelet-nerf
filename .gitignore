@@ -2,20 +2,13 @@
 .venv/
 __pycache__/
 *.py[cod]
-.pytest_cache/
 .ruff_cache/
-.mypy_cache/
-.coverage
-.coverage.*
-htmlcov/
 
 # Downloaded data and generated outputs
 /logs/
 /datasets/
 /models/
-/rendered_frames/
 /renders/
-/videos/
 
 # Local configuration
 .env

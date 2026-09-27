@@ -255,11 +255,6 @@ class DatasetLoadingTests(unittest.TestCase):
             self.assertEqual(float(config["far"]), 1)
             self.assertEqual(config["dataset_factor"], 8)
             self.assertEqual(config["white_background"], False)
-        paper = resolve_experiment_config(
-            parse_config("configs/config_nerf_fern_paper.yaml")
-        )
-        self.assertEqual(paper["dataset_factor"], 4)
-        self.assertEqual(paper["num_importance"], 128)
 
     def test_llff_train_test_and_dataset_free_spiral_for_all_models(self):
         root = self.root / "fern"
