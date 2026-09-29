@@ -93,7 +93,7 @@ Checkpoints are saved under `models/<experiment_name>/` and training logs under
 
 ```bash
 python train.py --config configs/config_nerf_fern.yaml \
-  --resume models/nerf_fern_quickstart/nerf_fern_quickstart_050000.pth
+  --resume models/nerf_fern/nerf_fern_050000.pth
 ```
 
 View training progress with:
