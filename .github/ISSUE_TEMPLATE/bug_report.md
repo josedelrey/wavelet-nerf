@@ -6,7 +6,7 @@ about: Report a reproducible failure
 ## Reproduce
 
 Include the command, minimal config, dataset format/scene and repository revision.
-Use a small fixture where possible; do not attach private data or large weights.
+Use a small fixture where possible. Do not attach private data or large weights.
 
 ## Expected and actual behavior
 

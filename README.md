@@ -151,5 +151,5 @@ and attribution are included in `LICENSE`.
 
 The pipeline figure comes from the MIT-licensed original NeRF repository.
 Project-authored contributions to the Lego and Fern GIFs are licensed under
-MIT. The underlying scene assets retain their original rights; see
+MIT. The underlying scene assets retain their original rights. See
 [LICENSE](LICENSE) for details.
