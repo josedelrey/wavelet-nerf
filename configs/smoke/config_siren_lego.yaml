@@ -1,0 +1,25 @@
+# Two-update CPU execution check. Use the fixed-ray fit to check learning.
+experiment_name: siren_lego_smoke
+model_type: siren
+dataset_type: blender
+dataset_path: ./datasets/lego
+dataset_factor: 32
+testskip: 8
+white_background: true
+scene_scale: 2.0
+device: cpu
+compile_model: false
+num_workers: 0
+siren_hidden_dim: 32
+num_layers: 2
+learning_rate: 0.0001
+num_random_rays: 8
+num_samples: 4
+num_samples_eval: 4
+chunk_size: 128
+netchunk: 1024
+num_iters: 2
+save_interval: 2
+log_interval: 1
+val_interval: 2
+num_render_poses: 2
