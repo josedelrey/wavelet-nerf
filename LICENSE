@@ -697,14 +697,13 @@ assets/pipeline.jpg is the NeRF pipeline figure from Mildenhall et al.,
 (ECCV 2020), obtained from the original NeRF repository:
 https://github.com/bmild/nerf/blob/master/imgs/pipeline.jpg
 Paper: https://arxiv.org/abs/2003.08934
-Credit remains with the original authors. This project does not relicense
-that figure under the AGPL or claim ownership of it. Consult the original
-source and applicable rights-holder terms before redistributing it.
+The source repository includes the figure under its root MIT license. The
+upstream NeRF copyright and license notice is reproduced below.
 
-assets/nerf_lego.gif is a render created by José del Rey using this repository
-and the Lego scene from the NeRF Synthetic dataset. Project-authored
-contributions to the GIF are offered under AGPL-3.0-only; rights in the
-underlying scene assets are not changed by this grant.
+assets/lego.gif and assets/fern.gif are renders created by José del Rey with
+this repository from the NeRF Synthetic Lego and LLFF Fern scenes,
+respectively. Project-authored contributions to these GIFs are licensed under
+the MIT License below. This grant does not cover the underlying scene assets.
 
 The download_dataset.sh script obtains example data distributed by the
 original NeRF project, including the NeRF Synthetic Lego scene and the LLFF
@@ -719,6 +718,31 @@ use and redistribution remain subject to applicable terms from their
 original rights holders; this project grants no additional dataset rights.
 
 
+Project-authored GIFs: assets/lego.gif and assets/fern.gif
+
+MIT License
+
+Copyright (c) 2025-2026 José del Rey
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
 -------------------------------------------------------------------------------
 THIRD-PARTY LICENSE NOTICES
 -------------------------------------------------------------------------------
@@ -728,8 +752,9 @@ material and the SIREN reference implementation used by the model layers.
 
 NeRF implementation
 Source: https://github.com/bmild/nerf
-Relevant files: wavelet_nerf/models.py, wavelet_nerf/camera.py, wavelet_nerf/encoding.py,
-wavelet_nerf/rendering.py, wavelet_nerf/data.py, wavelet_nerf/ndc.py, wavelet_nerf/nerf_reference.py,
+Relevant files: assets/pipeline.jpg, wavelet_nerf/models.py,
+wavelet_nerf/camera.py, wavelet_nerf/encoding.py, wavelet_nerf/rendering.py,
+wavelet_nerf/data.py, wavelet_nerf/ndc.py, wavelet_nerf/nerf_reference.py,
 wavelet_nerf/datasets/llff.py, and download_dataset.sh
 
 MIT License

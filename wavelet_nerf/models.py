@@ -187,19 +187,15 @@ class Siren(nn.Module):
         self.sigma_mul = sigma_mul
         self.rgb_mul = rgb_mul
 
-        # Base MLP: 3D point processing
         base_layers = [SirenLayer(3, hidden_dim, w0=w0, is_first=True)]
         for _ in range(num_layers - 1):
             base_layers.append(SirenLayer(hidden_dim, hidden_dim, w0=hidden_w0))
         self.block1 = nn.Sequential(*base_layers)
 
-        # Density branch: outputs density from base features
         self.density_branch = nn.Sequential(nn.Linear(hidden_dim, 1))
 
-        # Feature remapping: prepares features for the RGB head
         self.feature_remap = nn.Sequential(nn.Linear(hidden_dim, hidden_dim))
 
-        # RGB head: combines remapped features with encoded ray directions
         ray_encoding_size = 6 * self.dir_encoding_dim + 3
         self.rgb_head = nn.Sequential(
             SirenLayer(hidden_dim + ray_encoding_size, hidden_dim // 2, w0=hidden_w0),
@@ -209,20 +205,16 @@ class Siren(nn.Module):
     def forward(
         self, points: torch.Tensor, rays_d: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Process points through the base MLP
         base = self.block1(points)
 
-        # Compute density from base features
         sigma = self.density_branch(base)
         density = torch.relu(sigma) * self.sigma_mul
 
-        # Remap features and encode ray directions for RGB head
         features = self.feature_remap(base)
         rays_d_enc = positional_encoding(rays_d, self.dir_encoding_dim)
         rgb_input = torch.cat((features, rays_d_enc), dim=-1)
         rgb = self.rgb_head(rgb_input)
 
-        # Scale and constrain rgb values to [0, 1]
         rgb = torch.sigmoid_(rgb * self.rgb_mul)
         return rgb, density.squeeze(-1)
 
@@ -293,7 +285,6 @@ class WaveletLayer(nn.Module):
         )
         self.omega0 = omega0
 
-        # Scale linear weights by sqrt(gamma)
         with torch.no_grad():
             self.linear.weight.mul_(weight_scale * torch.sqrt(self.gamma[:, None]))
             self.linear.bias.uniform_(-np.pi, np.pi)
@@ -348,7 +339,6 @@ class WaveletNet(MFNBase):
         omega0=5.0,
         normalized=False,
     ):
-        # Initialize base linear and multiplicative branches
         super().__init__(hidden_features, out_features, hidden_layers, weight_scale)
 
         self.normalized = normalized
@@ -356,7 +346,6 @@ class WaveletNet(MFNBase):
         scale = input_scale / np.sqrt(n_layers)
         alpha_scaled = alpha / n_layers
 
-        # Create Wavelet filter layers
         self.filters = nn.ModuleList(
             [
                 WaveletLayer(
@@ -372,7 +361,6 @@ class WaveletNet(MFNBase):
         )
 
         if self.normalized:
-            # LayerNorm for each filter and each linear branch
             self.filter_norms = nn.ModuleList(
                 [nn.LayerNorm(hidden_features) for _ in range(n_layers)]
             )
@@ -381,12 +369,10 @@ class WaveletNet(MFNBase):
             )
 
     def forward(self, x):
-        # First filter pass
         out = self.filters[0](x)
         if self.normalized:
             out = self.filter_norms[0](out)
 
-        # Subsequent multiplicative filter + linear branches
         for i in range(1, len(self.filters)):
             f = self.filters[i](x)
             if self.normalized:
@@ -398,7 +384,6 @@ class WaveletNet(MFNBase):
 
             out = f * linear_out
 
-        # Final linear output
         out = self.output_linear(out)
 
         return out
@@ -425,7 +410,6 @@ class WaveletNeRF(nn.Module):
         super().__init__()
         self.dir_encoding_dim = dir_encoding_dim
 
-        # Base MLP: WaveletNet processes 3D points
         self.base_net = WaveletNet(
             in_features=in_features,
             hidden_features=hidden_dim,
@@ -439,13 +423,10 @@ class WaveletNeRF(nn.Module):
             normalized=normalized,
         )
 
-        # Density branch
         self.density_branch = nn.Linear(hidden_dim, 1)
 
-        # Feature remap for RGB head
         self.feature_remap = nn.Linear(hidden_dim, hidden_dim)
 
-        # Ray direction encoding size (positional_encoding should be defined elsewhere)
         ray_enc_size = dir_encoding_dim * 6 + in_features
         self.rgb_head = nn.Sequential(
             nn.Linear(hidden_dim + ray_enc_size, hidden_dim // 2),
@@ -458,14 +439,11 @@ class WaveletNeRF(nn.Module):
         self, points: torch.Tensor, rays_d: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
 
-        # Base features
         base_feats = self.base_net(points)
 
-        # Density
         raw_sigma = self.density_branch(base_feats)
         density = torch.relu(raw_sigma.squeeze(-1))
 
-        # Rgb
         remapped = self.feature_remap(base_feats)
         dir_enc = positional_encoding(rays_d, self.dir_encoding_dim)
         rgb_in = torch.cat([remapped, dir_enc], dim=-1)

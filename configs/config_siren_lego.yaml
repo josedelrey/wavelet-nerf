@@ -1,78 +1,41 @@
-# =============================================================================
-# SIREN Configuration File for Lego Dataset
-# =============================================================================
-
-# --------------------
-# Log Parameters
-# --------------------
-log_root: "./logs"  # Name of the root logs folder
+log_root: "./logs"
 experiment_name: "siren_lego"  # Scene-specific log and checkpoint subfolder
 
-# --------------------
-# Dataset Parameters
-# --------------------
-dataset_path: "./datasets/lego"  # Directory containing the dataset
+dataset_path: "./datasets/lego"
 dataset_type: "blender"  # OpenGL camera poses; world-space geometry rays
 dataset_factor: 1  # Full resolution; splits come from their JSON files
 white_background: true
 scene_center: [0.0, 0.0, 0.0]  # World-space center of the scene cube
 scene_scale: 2.0  # Cube half-extent; model coordinates = (xyz - center) / scale
 
-# --------------------
-# Sampling Parameters
-# --------------------
-num_random_rays: 1024  # Number of random rays sampled per iteration
-chunk_size: 1024  # Number of rays processed in a single rendering batch
-num_samples: 128  # Number of samples along each ray
+num_random_rays: 1024
+chunk_size: 1024
+num_samples: 128
 
-# --------------------
-# Training Parameters
-# --------------------
-num_iters: 300000  # Total number of training iterations
-learning_rate: 0.0001  # Starting learning rate for the optimizer
-near: 2.0  # Near bound for ray sampling
-far: 6.0  # Far bound for ray sampling
+num_iters: 300000
+learning_rate: 0.0001
+near: 2.0
+far: 6.0
 
-# --------------------
-# Model Saving Parameters
-# --------------------
-save_path: "./models"  # Directory to save trained models
-save_interval: 5000  # Interval (in iterations) for saving model checkpoints
+save_path: "./models"
+save_interval: 5000
 
-# --------------------
-# Learning Rate Decay Parameters
-# --------------------
 lr_decay: 300.0  # Number of 1000-step intervals for decay
-lr_decay_factor: 0.1  # Factor to multiply the learning rate at decay
-lr_min: 1e-05  # Minimum learning rate possible
+lr_decay_factor: 0.1
+lr_min: 1e-05
 
-# --------------------
-# Monitoring Parameters
-# --------------------
-log_interval: 50  # Interval (in iterations) for logging training metrics
-val_interval: 10000  # Interval (in iterations) for running validation
+log_interval: 50
+val_interval: 10000
 
-# --------------------
-# Monitoring Parameters
-# --------------------
-first_step_render: false  # First step validation render flag
+first_step_render: false
 
-# --------------------
-# Evaluation Render Parameters
-# --------------------
 num_render_poses: 80  # Number of frames of the evaluation video
 render_orbit_elevation: -30.0  # Degrees; orbit is centered at the source-world origin
 render_orbit_radius: 4.0  # World-space camera distance
-num_samples_eval: 256  # Number of samples per ray for evaluation
+num_samples_eval: 256
 
-# --------------------
-# Model Type
-# --------------------
 model_type: "siren"
 
-# --------------------
-# Model Hyperparameters
-# --------------------
 num_layers: 8
 siren_hidden_dim: 256
 siren_dir_encoding_dim: 4

@@ -253,22 +253,18 @@ def render_nerf(
         rays_d_chunk = rays_d[i : i + chunk_size].to(device)
 
         if stratified:
-            # Use the existing stratified sampling to generate sample positions and deltas.
             sample_positions, deltas = generate_sample_positions(
                 rays_o_chunk, rays_d_chunk, near, far, num_samples
             )
         else:
-            # Uniform sampling: generate evenly spaced sample positions between near and far.
             samples = torch.linspace(
                 near, far, num_samples, device=device, dtype=rays_d_chunk.dtype
             )
 
-            # Compute intervals (deltas) between consecutive sample positions.
             deltas = samples[1:] - samples[:-1]
             delta_inf = torch.tensor([1e10], device=device, dtype=deltas.dtype)
             deltas = torch.cat([deltas, delta_inf], dim=0)
 
-            # Compute the actual positions along the rays.
             sample_positions = rays_o_chunk.unsqueeze(1) + samples.unsqueeze(
                 0
             ).unsqueeze(-1) * rays_d_chunk.unsqueeze(1)
@@ -282,7 +278,6 @@ def render_nerf(
             .reshape(-1, 3)
         )
 
-        # Normalize positions and query the model to get colors and densities.
         queries = [
             query_model(
                 model,
@@ -298,7 +293,6 @@ def render_nerf(
         colors = colors_flat.reshape(rays_o_chunk.shape[0], num_samples, 3)
         densities = densities_flat.reshape(rays_o_chunk.shape[0], num_samples)
 
-        # Composite the colors using the computed weights from the densities.
         # NDC directions remain unnormalized. As in the reference, convert
         # parameter intervals to distances in the geometry ray's coordinate space.
         distances = deltas * torch.linalg.vector_norm(

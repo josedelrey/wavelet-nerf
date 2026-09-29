@@ -1,4 +1,4 @@
-# Wavelet-NeRF
+# Wavelet NeRF
 
 [![CI](https://github.com/josedelrey/wavelet-nerf/actions/workflows/ci.yml/badge.svg)](https://github.com/josedelrey/wavelet-nerf/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10--3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -32,13 +32,9 @@ camera rays, then use volume rendering to reconstruct the training images.
 In every model, density depends only on position. The color branch also receives
 encoded viewing directions so appearance can change with the camera angle.
 
-| | |
-|:---:|:---:|
-| ![](assets/lego.gif) | ![](assets/fern.gif) |
-
 ## Installation
 
-Use Python 3.10–3.13 and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+Supported on Linux with Python 3.10–3.13. Requires Git and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 Run commands from the repository root.
 
 ```bash
@@ -78,11 +74,15 @@ Train NeRF on Lego:
 python train.py --config configs/config_nerf_lego.yaml
 ```
 
+<img src="assets/lego.gif" alt="NeRF trained on Lego" width="480">
+
 Train NeRF on Fern:
 
 ```bash
 python train.py --config configs/config_nerf_fern.yaml
 ```
+
+<img src="assets/fern.gif" alt="NeRF trained on Fern" width="480">
 
 Lego uses full resolution and 500,000 updates. Fern uses factor-8 downsampling
 and 200,000 updates. SIREN and wavelet variants are available in [configs/](configs/).
@@ -143,10 +143,13 @@ Test outputs are saved to `logs/<experiment_name>/testset_<step>/`, including
 
 ## License
 
-Licensed under [AGPL-3.0-only](LICENSE). The MFN and SIREN layers draw on the
+Project-authored code and documentation are licensed under
+[AGPL-3.0-only](LICENSE). The MFN and SIREN layers draw on the
 [MFN implementation](https://github.com/boschresearch/multiplicative-filter-networks)
 and [SIREN implementation](https://github.com/vsitzmann/siren). Upstream notices
 and attribution are included in `LICENSE`.
 
-The pipeline figure is from the original NeRF authors. Figures and downloaded
-datasets retain their original rights and are not relicensed by this project.
+The pipeline figure comes from the MIT-licensed original NeRF repository.
+Project-authored contributions to the Lego and Fern GIFs are licensed under
+MIT. The underlying scene assets retain their original rights; see
+[LICENSE](LICENSE) for details.

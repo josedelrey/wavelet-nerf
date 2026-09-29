@@ -127,7 +127,6 @@ def write_metrics(rows, output_dir, settings):
 
 
 def main():
-    # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Evaluate test views or render a novel-view trajectory."
     )
@@ -178,11 +177,9 @@ def main():
     device = resolve_device(config["device"])
     print(f"Using device: {device}")
 
-    # Reproducibility
     seed = int(config["seed"])
     configure_reproducibility(seed, config["deterministic"])
 
-    # Parameters
     dataset_path = config["dataset_path"]
     model_type = config["model_type"]
     reference_baseline = model_type == "nerf"
@@ -235,7 +232,6 @@ def main():
 
     model = create_model(config).to(device)
 
-    # Load the model checkpoint
     model.load_state_dict(checkpoint["model_state_dict"])
 
     model = prepare_model(model, config, device)
@@ -276,7 +272,6 @@ def main():
         overwrite=args.overwrite,
     )
 
-    # Initialize tqdm for the rendering loop
     render_loop = tqdm(
         range(len(render_poses)),
         desc="Evaluating test views" if args.mode == "test" else "Rendering frames",
@@ -284,7 +279,6 @@ def main():
         dynamic_ncols=True,
     )
 
-    # Render the images
     model.eval()
     rows = []
     for i in render_loop:
@@ -314,7 +308,6 @@ def main():
             ),
         )
 
-        # Reshape to image
         H_val, W_val = height, width
         pred_val_rgb = pred_val_rgb.reshape(H_val, W_val, 3).cpu().numpy()
 
@@ -333,7 +326,6 @@ def main():
         pred_val_rgb_clamped = np.clip(pred_val_rgb, 0.0, 1.0)
         frame = (pred_val_rgb_clamped * 255).astype(np.uint8)
 
-        # Save frame as PNG
         prefix = "test" if args.mode == "test" else "frame"
         filename = f"{i:03d}.png" if automatic_output else f"{prefix}_{i:04d}.png"
         frame_filename = os.path.join(output_dir, filename)

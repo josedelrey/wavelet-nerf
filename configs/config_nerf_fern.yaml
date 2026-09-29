@@ -26,7 +26,7 @@ render_spiral_radius_scale: 1.0  # Multiplier on camera-position percentile radi
 
 # Sampling settings from bmild/nerf/config_fern.txt (factor-8 quick start)
 model_type: "nerf"
-experiment_name: "nerf_fern_quickstart"
+experiment_name: "nerf_fern"
 num_iters: 200000
 learning_rate: 0.0005
 lr_decay: 250.0

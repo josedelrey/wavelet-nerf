@@ -65,7 +65,6 @@ def defer_sigint():
 
 
 def main():
-    # Parse command line arguments
     parser = argparse.ArgumentParser(
         description="Train NeRF on a given dataset using volumetric rendering."
     )
@@ -99,45 +98,37 @@ def main():
     device = resolve_device(config["device"])
     print(f"Using device: {device}")
 
-    # Reproducibility
     seed = int(config["seed"])
     configure_reproducibility(seed, config["deterministic"])
 
-    # Dataset parameters
     dataset_path = config["dataset_path"]
     print("Loading scene...")
     scene = load_configured_scene(config, splits=("train", "val"))
     validation = scene.split("val")
 
-    # Sampling parameters
     num_random_rays = int(config["num_random_rays"])
     chunk_size = int(config["chunk_size"])
     num_samples = int(config["num_samples"])
     num_samples_eval = int(config["num_samples_eval"])
 
-    # Training parameters
     num_iters = int(config["num_iters"])
     learning_rate = float(config["learning_rate"])
     near, far = resolve_sampling_bounds(config, scene)
 
-    # Log parameters
     log_root = config["log_root"]
     experiment_name = config.get("experiment_name")
     if not experiment_name:
         raise ValueError("Config must define an 'experiment_name' field")
     log_dir = os.path.join(log_root, experiment_name)
 
-    # Model saving parameters
     checkpoint_root = config["save_path"]
     save_path = os.path.join(checkpoint_root, experiment_name)
     save_interval = int(config["save_interval"])
 
-    # Learning rate decay parameters
     lr_decay = float(config["lr_decay"])
     lr_decay_factor = float(config["lr_decay_factor"])
     lr_min = float(config["lr_min"])
 
-    # First step render flag
     first_step_render = config["first_step_render"]
 
     model_type = config["model_type"]
@@ -158,7 +149,6 @@ def main():
 
     model = create_model(config).to(device)
 
-    # Monitoring parameters
     log_interval = int(config["log_interval"])
     val_interval = int(config["val_interval"])
     print("\n===== Training Configuration Summary =====")
@@ -218,7 +208,6 @@ def main():
     if checkpoint is not None:
         sampler.load_state_dict(checkpoint["training_state"]["sampler"])
 
-    # Set up the optimizer and loss function
     optimizer = (
         KerasAdam(model.parameters(), lr=learning_rate)
         if reference_baseline
@@ -226,7 +215,6 @@ def main():
     )
     mse_loss = nn.MSELoss()
 
-    # Learning rate scheduler
     gamma = lr_decay_factor ** (1 / (lr_decay * 1000)) if lr_decay > 0 else 1.0
     scheduler = torch.optim.lr_scheduler.LambdaLR(
         optimizer,
@@ -237,7 +225,6 @@ def main():
         ),
     )
 
-    # TensorBoard writer
     writer_kwargs = {"log_dir": log_dir}
     start_iter = 0
     start_time = datetime.datetime.now()
@@ -260,7 +247,6 @@ def main():
     # interruption before the first update or during a later forward pass.
     completed_steps = start_iter
     update_in_progress = False
-    # Training loop
     boundary_rng = (
         checkpoint["training_state"]["rng"] if checkpoint is not None else capture_rng()
     )
@@ -332,7 +318,6 @@ def main():
                     **render_options,
                 )
 
-                # Compute loss, backpropagate, and update model
                 optimizer.zero_grad()
                 pred_rgb = (
                     rendered["rgb_map"] if isinstance(rendered, dict) else rendered
@@ -356,14 +341,12 @@ def main():
 
                 pbar.update(1)
 
-                # Log metrics and write to TensorBoard
                 if step == 1 or step % log_interval == 0:
                     log_training_metrics(step, scheduler, fine_loss, start_time, writer)
                     if coarse_loss is not None:
                         writer.add_scalar("loss/coarse", coarse_loss.item(), step)
                         writer.add_scalar("loss/total", loss.item(), step)
 
-                # Save checkpoint
                 if step % save_interval == 0 and step < num_iters:
                     model_filename = save_checkpoint(
                         step,
@@ -382,9 +365,7 @@ def main():
                         f"[{elapsed_str}] Model saved to {model_filename} at iteration {step}"
                     )
 
-                # Log validation metrics
                 if step % val_interval == 0 or (step == 1 and first_step_render):
-                    # Select a random image and render it for validation
                     test_image_index = np.random.default_rng([seed, step]).integers(
                         N_val
                     )
@@ -426,14 +407,12 @@ def main():
                             )
                     model.train()
 
-                    # Reshape to image
                     H_val, W_val = single_val_image.shape[1:3]
                     pred_val_rgb = pred_val_rgb.reshape(H_val, W_val, 3).cpu().numpy()
                     tqdm.write(
                         f"Validation Debug: Rendered image shape: {pred_val_rgb.shape}"
                     )
 
-                    # Compute validation PSNR
                     gt_val_img = single_val_image[0]
                     val_mse = np.mean((pred_val_rgb - gt_val_img) ** 2)
                     val_psnr = mse_to_psnr(val_mse)
@@ -442,7 +421,6 @@ def main():
                     )
                     writer.add_scalar("val/psnr", val_psnr, step)
 
-                    # Log the rendered image as a TensorBoard image
                     pred_val_rgb_clamped = np.clip(pred_val_rgb, 0.0, 1.0)
                     writer.add_image(
                         "val/render",
@@ -455,7 +433,6 @@ def main():
                     )
                     tqdm.write(f"[Validation Step] Iter {step}  PSNR: {val_psnr:.2f}")
 
-            # Save final model after training is complete
             final_model_path = save_checkpoint(
                 completed_steps,
                 model,
@@ -479,7 +456,6 @@ def main():
                 "no new checkpoint saved. Existing checkpoints were preserved."
             )
             return
-        # Save checkpoint on keyboard interrupt
         elapsed_str = format_elapsed_time(start_time)
         tqdm.write(
             f"\n[{elapsed_str}] Keyboard interrupt detected! Saving current checkpoint..."

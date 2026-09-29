@@ -1,27 +1,14 @@
-# =============================================================================
-# NeRF Configuration File for Lego Dataset
-# =============================================================================
-
-# --------------------
-# Log Parameters
-# --------------------
-log_root: "./logs"  # Name of the root logs folder
+log_root: "./logs"
 experiment_name: "nerf_lego"  # Scene-specific log and checkpoint subfolder
 
-# --------------------
-# Dataset Parameters
-# --------------------
-dataset_path: "./datasets/lego"  # Directory containing the dataset
+dataset_path: "./datasets/lego"
 dataset_type: "blender"  # OpenGL camera poses; world-space geometry rays
 dataset_factor: 1  # Full resolution; splits come from their JSON files
 scene_center: [0.0, 0.0, 0.0]  # World-space center of the scene cube
 scene_scale: 1.0  # Reference NeRF uses original world coordinates
 
-# --------------------
-# Sampling Parameters
-# --------------------
-num_random_rays: 1024  # Number of random rays sampled per iteration
-chunk_size: 1024  # Number of rays processed in a single rendering batch
+num_random_rays: 1024
+chunk_size: 1024
 num_samples: 64  # Coarse samples along each ray
 num_importance: 128  # Additional fine samples; fine MLP sees 192 total
 netchunk: 65536  # Maximum points per network query
@@ -35,54 +22,30 @@ precrop_frac: 0.5
 half_res: false  # Published full-resolution Blender settings
 testskip: 8  # Validation subsampling; test evaluation uses all views
 
-# --------------------
-# Training Parameters
-# --------------------
 num_iters: 500000  # Published Blender training budget
-learning_rate: 0.0005  # Starting learning rate for the optimizer
-near: 2.0  # Near bound for ray sampling
-far: 6.0  # Far bound for ray sampling
+learning_rate: 0.0005
+near: 2.0
+far: 6.0
 
-# --------------------
-# Model Saving Parameters
-# --------------------
-save_path: "./models"  # Directory to save trained models
-save_interval: 5000  # Interval (in iterations) for saving model checkpoints
+save_path: "./models"
+save_interval: 5000
 
-# --------------------
-# Learning Rate Decay Parameters
-# --------------------
 lr_decay: 500.0  # Exponential decay time constant in 1000 updates
-lr_decay_factor: 0.1  # Factor to multiply the learning rate at decay
+lr_decay_factor: 0.1
 lr_min: 0.0  # Reference schedule has no minimum floor
 
-# --------------------
-# Monitoring Parameters
-# --------------------
-log_interval: 50  # Interval (in iterations) for logging training metrics
-val_interval: 50000  # Interval (in iterations) for running validation
+log_interval: 50
+val_interval: 50000
 
-# --------------------
-# Monitoring Parameters
-# --------------------
-first_step_render: false  # First step validation render flag
+first_step_render: false
 
-# --------------------
-# Evaluation Render Parameters
-# --------------------
 num_render_poses: 80  # Number of frames of the evaluation video
 render_orbit_elevation: -30.0  # Degrees; orbit is centered at the source-world origin
 render_orbit_radius: 4.0  # World-space camera distance
 num_samples_eval: 64  # Coarse samples; 128 fine samples are added
 
-# --------------------
-# Model Type
-# --------------------
 model_type: "nerf"
 
-# --------------------
-# Model Hyperparameters
-# --------------------
 pos_encoding_dim: 10
 dir_encoding_dim: 4
 hidden_dim: 256
