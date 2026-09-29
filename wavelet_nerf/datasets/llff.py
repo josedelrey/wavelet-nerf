@@ -1,7 +1,7 @@
 """Forward-facing LLFF scenes, including Fern.
 
 Camera conversion, bound scaling, recentering, and spiral geometry follow
-bmild/nerf/load_llff.py (MIT; notice preserved in LICENSE).
+bmild/nerf/load_llff.py (MIT, notice preserved in LICENSE).
 """
 
 from pathlib import Path
@@ -32,7 +32,7 @@ def load_llff_scene(
     pose_path = root / "poses_bounds.npy"
     if not pose_path.is_file():
         raise FileNotFoundError(
-            f"Missing LLFF camera metadata: {pose_path}; download poses_bounds.npy with the images"
+            f"Missing LLFF camera metadata: {pose_path}. Download poses_bounds.npy with the images"
         )
     rows = np.load(pose_path, allow_pickle=False)
     if (
@@ -58,7 +58,7 @@ def load_llff_scene(
     image_dir = cached if factor != 1 and cached.is_dir() else root / "images"
     if not image_dir.is_dir():
         raise FileNotFoundError(
-            f"Missing LLFF image directory: {image_dir}; "
+            f"Missing LLFF image directory: {image_dir}. "
             f"provide images/ or images_{factor}/ with RGB PNG/JPEG files"
         )
     paths = sorted(
@@ -92,7 +92,7 @@ def load_llff_scene(
         )
         images.append(image)
 
-    # LLFF stores [down, right, back]; the renderer uses [right, up, back].
+    # LLFF stores [down, right, back]. The renderer uses [right, up, back].
     poses = np.tile(np.eye(4), (len(rows), 1, 1))
     poses[:, :3, :4] = np.stack(
         (

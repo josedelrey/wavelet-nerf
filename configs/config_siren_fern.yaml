@@ -1,4 +1,4 @@
-# Forward-facing LLFF Fern scene; sampling bounds are in NDC
+# Forward-facing LLFF Fern scene. Sampling bounds are in NDC
 dataset_type: "llff"
 dataset_path: "./datasets/fern"
 dataset_factor: 8
@@ -24,7 +24,7 @@ render_spiral_rotations: 2.0  # Turns around the recentered average camera
 render_spiral_zrate: 0.5  # Vertical oscillation rate per turn
 render_spiral_radius_scale: 1.0  # Multiplier on camera-position percentile radii
 
-# Experimental starting settings; no claim of reproduced Fern scores
+# Experimental starting settings. No claim of reproduced Fern scores
 model_type: "siren"
 experiment_name: "siren_fern"
 num_iters: 300000

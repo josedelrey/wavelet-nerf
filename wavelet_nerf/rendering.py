@@ -34,7 +34,7 @@ def generate_sample_positions(
     Returns:
         Tuple[Tensor, Tensor]:
             - sample_positions (Tensor): Sample positions for each ray.
-            - deltas (Tensor): Intervals in ray-parameter space; multiply by the
+            - deltas (Tensor): Intervals in ray-parameter space. Multiply by the
               geometry direction norm before volume integration.
     """
     validate_rays(rays_o_batch, rays_d_batch)
@@ -178,7 +178,7 @@ def render_nerf(
         rays_d (Tensor): Ray directions of shape [num_rays, 3].
         near (float): Near bound for sampling along the rays.
         far (float): Far bound for sampling along the rays.
-        num_samples (int, optional): Coarse sample count; defaults to 64 for
+        num_samples (int, optional): Coarse sample count. Defaults to 64 for
             reference NeRF and 256 for other models.
         device (str, optional): Device on which to perform rendering.
         white_background (bool, optional): If True, composite over a white background.
@@ -186,7 +186,7 @@ def render_nerf(
         stratified (bool, optional): If True, use stratified sampling (default),
                                      else use uniform sampling for validation.
         scene_normalization (SceneNormalization): World-space scene transform,
-                                                  independent of near/far; defaults to identity.
+                                                  independent of near/far. Defaults to identity.
         view_directions (Tensor, optional): Original unit world directions for
             appearance when geometry rays are in NDC. Defaults to unit rays_d.
         Geometry rays must be finite, nonzero float32/float64 N x 3 tensors.
@@ -198,7 +198,7 @@ def render_nerf(
         output_device: Optional inference output destination (e.g. 'cpu').
             Completed chunks are copied into a preallocated output buffer.
             Requires disabled gradients. Otherwise chunks retain their graphs
-            until concatenation/backpropagation; chunk_size does not cap that memory.
+            until concatenation/backpropagation. Limiting chunk_size does not cap that memory.
 
     Returns:
         Tensor: A tensor of shape [num_rays, 3] containing the rendered RGB colors.
@@ -209,7 +209,7 @@ def render_nerf(
     validate_rays(rays_o, rays_d, view_directions)
     validate_sampling_options(perturb, raw_noise_std)
     if output_device is not None and torch.is_grad_enabled():
-        raise ValueError("output_device is for inference; use torch.no_grad()")
+        raise ValueError("output_device is for inference. Use torch.no_grad()")
     if view_directions is None:
         view_directions = torch.nn.functional.normalize(rays_d, dim=-1)
     else:

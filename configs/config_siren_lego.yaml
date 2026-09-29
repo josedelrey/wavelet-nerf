@@ -2,11 +2,11 @@ log_root: "./logs"
 experiment_name: "siren_lego"  # Scene-specific log and checkpoint subfolder
 
 dataset_path: "./datasets/lego"
-dataset_type: "blender"  # OpenGL camera poses; world-space geometry rays
-dataset_factor: 1  # Full resolution; splits come from their JSON files
+dataset_type: "blender"  # OpenGL camera poses with world-space geometry rays
+dataset_factor: 1  # Full resolution. Splits come from their JSON files
 white_background: true
 scene_center: [0.0, 0.0, 0.0]  # World-space center of the scene cube
-scene_scale: 2.0  # Cube half-extent; model coordinates = (xyz - center) / scale
+scene_scale: 2.0  # Cube half-extent. Model coordinates = (xyz - center) / scale
 
 num_random_rays: 1024
 chunk_size: 1024
@@ -30,7 +30,7 @@ val_interval: 10000
 first_step_render: false
 
 num_render_poses: 80  # Number of frames of the evaluation video
-render_orbit_elevation: -30.0  # Degrees; orbit is centered at the source-world origin
+render_orbit_elevation: -30.0  # Degrees. The orbit is centered at the source-world origin
 render_orbit_radius: 4.0  # World-space camera distance
 num_samples_eval: 256
 

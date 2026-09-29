@@ -30,18 +30,18 @@ def read_image(path, *, factor=1, white_background=False, reference_blender=Fals
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(
-            f"Dataset image is missing: {path}; check the metadata path and downloaded files"
+            f"Dataset image is missing: {path}. Check the metadata path and downloaded files"
         )
     with Image.open(path) as source:
         if source.format not in ("PNG", "JPEG"):
             raise ValueError(f"Expected an 8-bit RGB/RGBA PNG or RGB JPEG: {path}")
-        # Pillow silently converts 16-bit RGB PNG to 8-bit; reject it before decoding.
+        # Pillow silently converts 16-bit RGB PNG to 8-bit. Reject it before decoding.
         if source.format == "PNG":
             with path.open("rb") as file:
                 header = file.read(26)
             if len(header) < 26 or header[24] != 8:
                 raise ValueError(
-                    f"Expected 8-bit PNG channels: {path}; convert explicitly before loading"
+                    f"Expected 8-bit PNG channels: {path}. Convert explicitly before loading"
                 )
         if source.mode not in ("RGB", "RGBA"):
             raise ValueError(f"Expected RGB or RGBA image, got {source.mode}: {path}")

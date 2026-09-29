@@ -52,4 +52,4 @@ def load_scene(
             recenter=llff_recenter,
             white_background=False if white_background is None else white_background,
         )
-    raise ValueError(f"Unknown dataset_type {dataset_type!r}; expected blender or llff")
+    raise ValueError(f"Unknown dataset_type {dataset_type!r}. Expected blender or llff")

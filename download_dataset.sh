@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: AGPL-3.0-only
-# Based on bmild/nerf's download_example_data.sh; upstream notice: LICENSE.
+# Based on bmild/nerf's download_example_data.sh. Upstream notice: LICENSE.
 
 set -euo pipefail
 
@@ -19,7 +19,7 @@ for scene in "${scenes[@]}"; do
 done
 
 if (( ${#missing_scenes[@]} == 0 )); then
-    printf 'Both dataset paths already exist; nothing to download.\n'
+    printf 'Both dataset paths already exist. Nothing to download.\n'
     exit 0
 fi
 

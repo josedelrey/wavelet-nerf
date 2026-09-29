@@ -273,14 +273,14 @@ def normalize_config(config):
             raise ValueError("dataset_type must be blender or llff")
         if key == "device" and not re.fullmatch(r"auto|cpu|cuda(?::[0-9]+)?", value):
             raise ValueError(
-                "device must be auto, cpu, cuda or cuda:<index>; MPS is not supported"
+                "device must be auto, cpu, cuda or cuda:<index>. MPS is not supported"
             )
         result[key] = value
     return result
 
 
 def parse_config(config_path):
-    """Read one strict YAML mapping; files may contain partial evaluation overrides."""
+    """Read one strict YAML mapping. Files may contain partial evaluation overrides."""
     path = Path(config_path)
     if path.suffix.lower() not in (".yaml", ".yml"):
         raise ValueError("Configuration files must use YAML (.yaml or .yml)")
@@ -311,7 +311,7 @@ def validate_resolved_config(config, *, training=False):
     if config["dataset_type"] == "llff":
         if config["half_res"]:
             raise ValueError(
-                "half_res is only supported for Blender; use dataset_factor for LLFF"
+                "half_res is only supported for Blender. Use dataset_factor for LLFF"
             )
         if (near, far) != (0.0, 1.0):
             raise ValueError("LLFF NDC requires near = 0 and far = 1")
@@ -341,7 +341,7 @@ def validate_resolved_config(config, *, training=False):
             )
         if training and config["lr_min"] != 0:
             raise ValueError(
-                "Reference NeRF uses exponential decay without an lr_min floor; set lr_min = 0"
+                "Reference NeRF uses exponential decay without an lr_min floor. Set lr_min = 0"
             )
     elif min(config["num_samples"], config["num_samples_eval"]) < 2:
         raise ValueError(

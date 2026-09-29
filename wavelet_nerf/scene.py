@@ -9,7 +9,7 @@ class SceneNormalization:
     """Map a world-space cube centered at center with half-extent scale to [-1, 1].
 
     A uniform scale preserves relative distances. Points outside the cube are
-    allowed and are not clipped; rays and integration intervals stay in world units.
+    allowed and are not clipped. Rays and integration intervals stay in world units.
     """
 
     center: tuple[float, float, float] = (0.0, 0.0, 0.0)

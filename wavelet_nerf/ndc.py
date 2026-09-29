@@ -1,6 +1,6 @@
 """Reference NeRF NDC projection for forward-facing LLFF geometry rays.
 
-Adapted from bmild/nerf/run_nerf_helpers.py (MIT; notice preserved in LICENSE).
+Adapted from bmild/nerf/run_nerf_helpers.py (MIT, notice preserved in LICENSE).
 The projection near plane is distinct from the subsequent sampling bounds [0, 1].
 """
 

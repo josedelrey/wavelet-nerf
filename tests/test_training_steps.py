@@ -98,7 +98,7 @@ class TrainingStepTests(unittest.TestCase):
                 training_calls += 1
             return torch.sigmoid(model.weight).expand(len(rays_o), 3)
 
-        # Keep real Adam, LambdaLR, checkpoint I/O, and the training loop;
+        # Keep real Adam, LambdaLR, checkpoint I/O, and the training loop.
         # replace expensive data/model/rendering and external logging only.
         loader = train.DataLoader
 

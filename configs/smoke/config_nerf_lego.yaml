@@ -1,4 +1,4 @@
-# Two-update CPU execution check; not a quality benchmark.
+# Two-update CPU execution check. This is not a quality benchmark.
 experiment_name: nerf_lego_smoke
 model_type: nerf
 dataset_type: blender

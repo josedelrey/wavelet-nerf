@@ -137,7 +137,7 @@ def render_reference_nerf(
             "Reference rendering needs >=2 coarse samples (>=3 with importance sampling)"
         )
     if output_device is not None and torch.is_grad_enabled():
-        raise ValueError("output_device is for inference; use torch.no_grad()")
+        raise ValueError("output_device is for inference. Use torch.no_grad()")
     device = rays_o.device if device is None else device
     results = {}
     jitter = stratified and perturb > 0

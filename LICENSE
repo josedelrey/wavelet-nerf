@@ -686,7 +686,7 @@ Upstream license: GNU Affero General Public License, version 3
 
 The MFNBase implementation in wavelet_nerf/models.py is adapted from the upstream
 MFNBase. WaveletLayer and WaveletNet adapt the upstream GaborLayer and GaborNet
-construction. Adapted for this project in 2025; local changes include the
+construction. Adapted for this project in 2025. Local changes include the
 omega0 frequency control, optional LayerNorm, and a NeRF density/appearance
 architecture. The full AGPL version 3 license text appears above.
 
@@ -715,7 +715,7 @@ Downloaded datasets are external material and are not covered by this
 project's AGPL license. The original repository's MIT software license is
 not asserted here to be a separate license for all dataset assets. Dataset
 use and redistribution remain subject to applicable terms from their
-original rights holders; this project grants no additional dataset rights.
+original rights holders. This project grants no additional dataset rights.
 
 
 Project-authored GIFs: assets/lego.gif and assets/fern.gif

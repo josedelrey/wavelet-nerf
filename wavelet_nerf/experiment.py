@@ -223,7 +223,7 @@ def experiment_metadata(
             "background": "black" if config.get("dataset_type") == "llff" else "white",
             "ray_space": "ndc" if config.get("dataset_type") == "llff" else "world",
             "ndc_near_plane": 1.0 if config.get("dataset_type") == "llff" else None,
-            "camera_convention": "integer pixels; center (W/2, H/2); camera -Z forward, +Y up; "
+            "camera_convention": "integer pixels, center (W/2, H/2), camera -Z forward and +Y up, "
             + (
                 "unnormalized NDC geometry rays, unit world viewdirs"
                 if config.get("dataset_type") == "llff"

@@ -31,11 +31,11 @@ def atomic_write(path, write):
 
 
 def prepare_output(path, patterns, *, overwrite=False, resume=False):
-    """Require an explicit run mode; overwrite removes only recognized artifacts."""
+    """Require an explicit run mode. Overwrite removes only recognized artifacts."""
     path = Path(path)
     if path.exists() and any(path.iterdir()) and not (overwrite or resume):
         raise FileExistsError(
-            f"{path} is not empty; use --resume or --overwrite, "
+            f"{path} is not empty. Use --resume or --overwrite, "
             "or choose a new experiment/output directory"
         )
     if overwrite:
@@ -108,7 +108,7 @@ def restore_rng(state):
             torch.cuda.set_rng_state_all(state["cuda"])
         else:
             warnings.warn(
-                "CUDA RNG state cannot be restored on this device configuration; "
+                "CUDA RNG state cannot be restored on this device configuration. "
                 "resume will not reproduce the original trajectory",
                 stacklevel=2,
             )

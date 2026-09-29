@@ -2,15 +2,15 @@ log_root: "./logs"
 experiment_name: "nerf_lego"  # Scene-specific log and checkpoint subfolder
 
 dataset_path: "./datasets/lego"
-dataset_type: "blender"  # OpenGL camera poses; world-space geometry rays
-dataset_factor: 1  # Full resolution; splits come from their JSON files
+dataset_type: "blender"  # OpenGL camera poses with world-space geometry rays
+dataset_factor: 1  # Full resolution. Splits come from their JSON files
 scene_center: [0.0, 0.0, 0.0]  # World-space center of the scene cube
 scene_scale: 1.0  # Reference NeRF uses original world coordinates
 
 num_random_rays: 1024
 chunk_size: 1024
 num_samples: 64  # Coarse samples along each ray
-num_importance: 128  # Additional fine samples; fine MLP sees 192 total
+num_importance: 128  # Additional fine samples. The fine MLP sees 192 total
 netchunk: 65536  # Maximum points per network query
 perturb: 1.0  # Independent per-ray jitter during training
 lindisp: false
@@ -20,7 +20,7 @@ no_batching: true  # Choose one training image per update
 precrop_iters: 0
 precrop_frac: 0.5
 half_res: false  # Published full-resolution Blender settings
-testskip: 8  # Validation subsampling; test evaluation uses all views
+testskip: 8  # Validation subsampling. Test evaluation uses all views
 
 num_iters: 500000  # Published Blender training budget
 learning_rate: 0.0005
@@ -40,9 +40,9 @@ val_interval: 50000
 first_step_render: false
 
 num_render_poses: 80  # Number of frames of the evaluation video
-render_orbit_elevation: -30.0  # Degrees; orbit is centered at the source-world origin
+render_orbit_elevation: -30.0  # Degrees. The orbit is centered at the source-world origin
 render_orbit_radius: 4.0  # World-space camera distance
-num_samples_eval: 64  # Coarse samples; 128 fine samples are added
+num_samples_eval: 64  # Coarse samples. Another 128 fine samples are added
 
 model_type: "nerf"
 

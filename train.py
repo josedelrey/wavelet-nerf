@@ -194,7 +194,7 @@ def main():
         "replacement_within_batch": False,
     }
 
-    # RGB stays in one scene array; only sampled pixels acquire ray geometry.
+    # RGB stays in one scene array. Only sampled pixels acquire ray geometry.
     per_image_sampling = reference_baseline and config["no_batching"]
     sampler = PixelRaySampler(
         scene.images,
@@ -452,7 +452,7 @@ def main():
     except KeyboardInterrupt:
         if update_in_progress:
             tqdm.write(
-                "\nUpdate interrupted before its state was committed; "
+                "\nUpdate interrupted before its state was committed. "
                 "no new checkpoint saved. Existing checkpoints were preserved."
             )
             return

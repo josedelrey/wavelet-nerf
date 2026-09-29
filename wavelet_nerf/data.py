@@ -82,7 +82,7 @@ def camera_rays(height, width, c2w_matrices, intrinsics, *, normalize=True):
 def compute_rays(
     images: np.ndarray, c2w_matrices: np.ndarray, intrinsics, *, normalize=True
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Compute unit world rays and RGB targets; use explicit matrix intrinsics."""
+    """Compute unit world rays and RGB targets using explicit matrix intrinsics."""
     validate_rgb_images(images)
     count, height, width, _ = images.shape
     origins, directions = camera_rays(
@@ -184,7 +184,7 @@ class CameraRayGenerator:
 
 
 class PixelRaySampler:
-    """Keep images and camera matrices; create geometry only for a sampled batch.
+    """Keep images and camera matrices. Create geometry only for a sampled batch.
 
     Pixels are sampled without replacement within each batch. Batches are
     independent, rather than consuming a full-scene shuffled ray permutation.
@@ -325,7 +325,7 @@ class RayBatchDataset(Dataset):
 
 
 class PixelBatchPlans(Sampler):
-    """Prefetch indices only; saved progress follows the consumed plan's RNG."""
+    """Prefetch indices only. Saved progress follows the consumed plan's RNG."""
 
     def __init__(
         self,

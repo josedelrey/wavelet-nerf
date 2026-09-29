@@ -1,4 +1,4 @@
-# Forward-facing LLFF Fern scene; sampling bounds are in NDC
+# Forward-facing LLFF Fern scene. Sampling bounds are in NDC
 dataset_type: "llff"
 dataset_path: "./datasets/fern"
 dataset_factor: 8

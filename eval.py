@@ -41,7 +41,7 @@ def latest_checkpoint(config):
     ]
     if not checkpoints:
         raise FileNotFoundError(
-            f"No checkpoints found in {directory}; train this experiment first"
+            f"No checkpoints found in {directory}. Please train this experiment first"
         )
     return max(checkpoints, key=lambda path: int(path.stem[len(prefix) :]))
 
@@ -133,7 +133,7 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        help="Experiment YAML; finds its latest checkpoint unless --checkpoint is given",
+        help="Experiment YAML. Finds its latest checkpoint unless --checkpoint is given",
     )
     parser.add_argument(
         "--checkpoint", type=str, help="Use a specific checkpoint instead of the latest"
@@ -154,7 +154,7 @@ def main():
     )
     add_runtime_arguments(parser)
     parser.add_argument(
-        "--no-video", action="store_true", help="Save PNG frames only; skip FFmpeg"
+        "--no-video", action="store_true", help="Save PNG frames only without FFmpeg"
     )
     parser.add_argument(
         "--overwrite",
@@ -198,10 +198,10 @@ def main():
     if make_video:
         if shutil.which("ffmpeg") is None:
             parser.error(
-                "FFmpeg is required for video output; install it or use --no-video"
+                "FFmpeg is required for video output. Install it or use --no-video"
             )
         if video_path.exists() and not args.overwrite:
-            raise FileExistsError(f"{video_path} already exists; use --overwrite")
+            raise FileExistsError(f"{video_path} already exists. Use --overwrite")
     near = float(config["near"])
     far = float(config["far"])
     scene_normalization = resolve_scene_normalization(config, checkpoint)
@@ -346,11 +346,11 @@ def main():
                 "dataset_path": os.path.abspath(dataset_path),
                 "split": "test",
                 "data_range": 1.0,
-                "color_space": "stored RGB; no linear-light conversion",
+                "color_space": "stored RGB without linear-light conversion",
                 "background": "white" if white_background else "black",
-                "metric_input": "unclipped, unquantized float RGB; full image; no mask or crop",
+                "metric_input": "unclipped, unquantized float RGB over the full image without mask or crop",
                 "mse_dtype": "float64",
-                "sampling": "uniform; stratified=False",
+                "sampling": "uniform with stratified=False",
                 "dataset_type": config["dataset_type"],
                 "split_protocol": scene.split_protocol,
                 "frame_order": "sorted LLFF images, holdout subset"
@@ -369,7 +369,7 @@ def main():
             },
         )
         print(
-            f"Test views: {summary['num_images']}; mean PSNR: {summary['mean_psnr_db']:.4f} dB; "
+            f"Test views: {summary['num_images']}, mean PSNR: {summary['mean_psnr_db']:.4f} dB, "
             f"pooled PSNR: {summary['pooled_psnr_db']:.4f} dB"
         )
         print(f"Metrics saved to {output_dir}/metrics.json and metrics.csv")

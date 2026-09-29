@@ -73,7 +73,7 @@ class NeRFMLP(nn.Module):
 
 
 class NeRF(nn.Module):
-    """Independent reference coarse/fine networks; forward defaults to coarse output."""
+    """Independent reference coarse/fine networks. Forward defaults to coarse output."""
 
     def __init__(
         self,

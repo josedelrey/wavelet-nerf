@@ -12,7 +12,7 @@ def add_runtime_arguments(parser, *, training=False):
         dest="compile_model",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Opt into torch.compile; --no-compile disables it",
+        help="Opt into torch.compile. --no-compile disables it",
     )
     parser.add_argument("--netchunk", type=int, help="Maximum points per network query")
     if training:
@@ -35,7 +35,7 @@ def resolve_device(name):
     if name == "cuda" or name.startswith("cuda:"):
         if not torch.cuda.is_available():
             raise ValueError(
-                "CUDA was requested but is unavailable; use --device cpu or install a working CUDA build/driver"
+                "CUDA was requested but is unavailable. Use --device cpu or install a working CUDA build/driver"
             )
         index = int(name.split(":")[1]) if ":" in name else None
         if index is not None and (index < 0 or index >= torch.cuda.device_count()):

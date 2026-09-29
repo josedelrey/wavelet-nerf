@@ -28,7 +28,7 @@ def load_blender_scene(
         metadata_path = root / f"transforms_{name}.json"
         if not metadata_path.is_file():
             raise FileNotFoundError(
-                f"Missing Blender split {name!r}: {metadata_path}; "
+                f"Missing Blender split {name!r}: {metadata_path}. "
                 "download the split or request only available splits"
             )
         try:

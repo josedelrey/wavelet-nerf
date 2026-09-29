@@ -84,9 +84,9 @@ class SceneData:
     """RGB views in one scene coordinate frame, with OpenGL camera-to-world poses.
 
     Intrinsics are per-view 3x3 pinhole matrices. Bounds are camera-depth bounds
-    in scene units. LLFF sampling_bounds are [0, 1] in NDC; Blender uses world rays.
+    in scene units. LLFF sampling_bounds are [0, 1] in NDC. Blender uses world rays.
     world_to_scene maps source world points, separately from network normalization.
-    Split indices select rows; source_indices preserve original dataset ordering.
+    Split indices select rows. The source_indices field preserves original dataset ordering.
     """
 
     dataset_type: str
@@ -151,7 +151,7 @@ class SceneData:
     def split(self, name):
         if name not in self.splits:
             raise ValueError(
-                f"Split {name!r} was not loaded; available splits: {', '.join(self.splits)}"
+                f"Split {name!r} was not loaded. Available splits: {', '.join(self.splits)}"
             )
         indices = self.splits[name]
         # Basic slicing shares RGB storage for contiguous Blender splits.
